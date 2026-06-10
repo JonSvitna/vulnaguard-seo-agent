@@ -76,20 +76,39 @@ export default function Dashboard() {
     aiKey: typeof window !== 'undefined' ? localStorage.getItem(provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY') || undefined : undefined,
   })
 
-  // Load most recent session + inventory whenever the active site changes
+  const refreshInventoryBaseline = useCallback(async (site: SiteConfig) => {
+    try {
+      const githubToken = typeof window !== 'undefined' ? localStorage.getItem('GITHUB_TOKEN') || undefined : undefined
+      const qs = new URLSearchParams({
+        scan: '1',
+        repo: site.repo,
+        branch: site.branch,
+        contentPath: site.contentPath,
+      })
+      const res = await fetch(`/api/inventory/${encodeURIComponent(site.id)}?${qs.toString()}`, {
+        headers: {
+          ...(githubToken ? { 'X-GitHub-Token': githubToken } : {}),
+        },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      setBlogs(data.blogs ?? 0)
+      setServices(data.services ?? 0)
+    } catch {
+      // best effort
+    }
+  }, [])
+
+  // Load most recent session + inventory baseline whenever the active site changes
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const [sessRes, invRes] = await Promise.all([
-          fetch(`/api/sessions?siteId=${encodeURIComponent(activeSite.id)}`),
-          fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`),
-        ])
+        const sessRes = await fetch(`/api/sessions?siteId=${encodeURIComponent(activeSite.id)}`)
         if (cancelled) return
         const sessJson = sessRes.ok ? await sessRes.json() : { sessions: [] }
-        const invJson = invRes.ok ? await invRes.json() : { blogs: 0, services: 0 }
-        setBlogs(invJson.blogs ?? 0)
-        setServices(invJson.services ?? 0)
+        await refreshInventoryBaseline(activeSite)
+        if (cancelled) return
         const latest = sessJson.sessions?.[0]
         if (latest) {
           const detailRes = await fetch(`/api/sessions/${latest.id}`)
@@ -107,7 +126,7 @@ export default function Dashboard() {
       } catch { /* persistence is best-effort */ }
     })()
     return () => { cancelled = true }
-  }, [activeSite.id])
+  }, [activeSite, refreshInventoryBaseline])
 
   const ensureSession = useCallback(async (): Promise<string | null> => {
     if (sessionIdRef.current) return sessionIdRef.current
@@ -217,41 +236,6 @@ export default function Dashboard() {
             }),
           }).catch(() => {})
         }
-
-        // Update inventory by counting files with blog/service paths
-        const blogCount = files.filter(f => f.path.toLowerCase().includes('blog')).length
-        const serviceCount = files.filter(f => f.path.toLowerCase().includes('service')).length
-        
-        if (blogCount > 0 || serviceCount > 0) {
-          const nextBlogs = blogs + blogCount
-          const nextServices = services + serviceCount
-          
-          setBlogs(nextBlogs)
-          setServices(nextServices)
-          
-          // Persist to database
-          fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              blogs: nextBlogs,
-              services: nextServices,
-            }),
-          })
-            .then(res => {
-              if (res.ok) {
-                // Refetch to ensure DB value matches UI
-                return fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`).then(r => r.json())
-              }
-            })
-            .then(data => {
-              if (data) {
-                setBlogs(data.blogs ?? nextBlogs)
-                setServices(data.services ?? nextServices)
-              }
-            })
-            .catch(() => {})
-        }
       }
 
       conversationRef.current = [...conversationRef.current, { role: 'assistant', content: fullResponse }]
@@ -264,7 +248,7 @@ export default function Dashboard() {
       })
     }
     setLoading(false)
-  }, [activeSite, provider, ensureSession, persistMessage, blogs, services])
+  }, [activeSite, provider, ensureSession, persistMessage])
 
   const deployFiles = async () => {
     if (!pendingFiles.length) return
@@ -272,64 +256,47 @@ export default function Dashboard() {
     const { githubToken } = getStoredKeys()
 
     try {
-      // Batch all file pushes with Promise.all
-      const pushPromises = pendingFiles.map(file =>
-        fetch('/api/github', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(githubToken ? { 'X-GitHub-Token': githubToken } : {}),
-          },
-          body: JSON.stringify({
-            action: 'write',
-            repo: activeSite.repo,
-            path: file.path,
-            content: file.content,
-            message: `SEO Agent: add/update ${file.path}`,
-            branch: activeSite.branch,
-          }),
-        }).then(async res => {
-          const data = await res.json()
-          return { file, res, data }
-        })
-      )
+      const res = await fetch('/api/github', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(githubToken ? { 'X-GitHub-Token': githubToken } : {}),
+        },
+        body: JSON.stringify({
+          action: 'writeMany',
+          repo: activeSite.repo,
+          files: pendingFiles,
+          message: `SEO Agent: batch update ${pendingFiles.length} files`,
+          branch: activeSite.branch,
+        }),
+      })
+      const data = await res.json()
 
-      const results = await Promise.all(pushPromises)
-      const succeeded = results.filter(r => r.res.ok && r.data.success).map(r => r.file)
-      const failed = results.filter(r => !r.res.ok || !r.data.success).map(r => r.file)
-      const errors = results.filter(r => !r.res.ok || !r.data.success).map(r => r.data.error || `HTTP ${r.res.status}`)
-
-      if (failed.length === 0) {
-        setDeployStatus({ type: 'success', message: `✓ Pushed ${succeeded.length}/${pendingFiles.length} files → Vercel deploying...` })
-      } else if (succeeded.length > 0) {
-        setDeployStatus({ type: 'error', message: `Pushed ${succeeded.length}/${pendingFiles.length} files. ${failed.length} failed: ${errors[0]}` })
-      } else {
-        setDeployStatus({ type: 'error', message: `Push failed — no files were committed to ${activeSite.repo}. ${errors[0]}` })
+      if (!res.ok || !data.success) {
+        const err = data.error || `HTTP ${res.status}`
+        setDeployStatus({ type: 'error', message: `Push failed — ${err}` })
+        setTimeout(() => setDeployStatus(null), 8000)
+        return
       }
 
-      if (sessionIdRef.current && succeeded.length > 0) {
+      setDeployStatus({ type: 'success', message: `✓ Pushed ${pendingFiles.length}/${pendingFiles.length} files in one commit (${data.commit?.slice(0, 7)})` })
+
+      if (sessionIdRef.current) {
         fetch(`/api/sessions/${sessionIdRef.current}/results`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            results: succeeded.map(f => ({
+            results: pendingFiles.map(f => ({
               kind: 'deploy', path: f.path, content: f.content, status: 'pushed', siteId: activeSite.id,
             })),
           }),
         }).catch(() => {})
-
-        // Refresh inventory after successful deploy
-        fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`)
-          .then(res => res.json())
-          .then(data => {
-            setBlogs(data.blogs ?? 0)
-            setServices(data.services ?? 0)
-          })
-          .catch(() => {})
       }
 
-      setTimeout(() => setDeployStatus(null), failed.length > 0 ? 12000 : 6000)
-      setPendingFiles(failed)
+      await refreshInventoryBaseline(activeSite)
+
+      setTimeout(() => setDeployStatus(null), 6000)
+      setPendingFiles([])
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       setDeployStatus({ type: 'error', message: `Push failed: ${message}` })
