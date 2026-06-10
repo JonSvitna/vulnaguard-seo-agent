@@ -9,8 +9,15 @@ const SETTINGS: Setting[] = [
     key: 'ANTHROPIC_API_KEY',
     label: 'Anthropic API Key',
     placeholder: 'sk-ant-...',
-    help: 'Powers the SEO agent intelligence across all modules.',
+    help: 'Powers the SEO agent intelligence across all modules (Claude models).',
     link: 'https://console.anthropic.com/keys',
+  },
+  {
+    key: 'OPENAI_API_KEY',
+    label: 'OpenAI API Key',
+    placeholder: 'sk-...',
+    help: 'Optional alternative provider — switch the agent to GPT models from the dashboard.',
+    link: 'https://platform.openai.com/api-keys',
   },
   {
     key: 'GITHUB_TOKEN',
