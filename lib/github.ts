@@ -1,14 +1,14 @@
 import { Octokit } from '@octokit/rest'
 
-export function getOctokit() {
-  const token = process.env.GITHUB_TOKEN
-  if (!token) throw new Error('GITHUB_TOKEN not set')
-  return new Octokit({ auth: token })
+export function getOctokit(token?: string) {
+  const resolved = token || process.env.GITHUB_TOKEN
+  if (!resolved) throw new Error('GITHUB_TOKEN not set. Add it in Settings or set the GITHUB_TOKEN env var.')
+  return new Octokit({ auth: resolved })
 }
 
-export async function getRepoFile(repo: string, path: string, branch = 'main') {
+export async function getRepoFile(repo: string, path: string, branch = 'main', token?: string) {
   const [owner, repoName] = repo.split('/')
-  const octokit = getOctokit()
+  const octokit = getOctokit(token)
   try {
     const { data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch })
     if ('content' in data) {
@@ -28,13 +28,13 @@ export async function writeRepoFile(
   path: string,
   content: string,
   message: string,
-  branch = 'main'
+  branch = 'main',
+  token?: string
 ) {
   const [owner, repoName] = repo.split('/')
-  const octokit = getOctokit()
+  const octokit = getOctokit(token)
 
-  // Check if file exists to get SHA
-  const existing = await getRepoFile(repo, path, branch)
+  const existing = await getRepoFile(repo, path, branch, token)
 
   const params: Parameters<typeof octokit.repos.createOrUpdateFileContents>[0] = {
     owner,
@@ -50,9 +50,9 @@ export async function writeRepoFile(
   return data
 }
 
-export async function listRepoFiles(repo: string, path: string, branch = 'main') {
+export async function listRepoFiles(repo: string, path: string, branch = 'main', token?: string) {
   const [owner, repoName] = repo.split('/')
-  const octokit = getOctokit()
+  const octokit = getOctokit(token)
   try {
     const { data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch })
     if (Array.isArray(data)) {
