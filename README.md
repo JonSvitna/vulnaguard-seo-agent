@@ -20,6 +20,20 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Environment Variables
+
+Set these via `.env.local` or your deployment platform's environment settings (also editable from the in-app **Settings** page):
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` | Yes* | Powers the SEO agent using Claude models. |
+| `OPENAI_API_KEY` | Yes* | Alternative provider — powers the agent using GPT-4o. Switch providers with the dashboard's provider selector. |
+| `GITHUB_TOKEN` | Yes | Personal access token (`repo` scope) for reading/writing site files. |
+| `PEXELS_API_KEY` | No | Used by M6 to source blog post images. |
+| `GSC_CLIENT_ID` / `GSC_CLIENT_SECRET` / `GSC_REFRESH_TOKEN` | No | OAuth credentials for Google Search Console ranking data (M2). |
+
+\* At least one of `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` must be set. The dashboard's provider selector chooses which one is used per request.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

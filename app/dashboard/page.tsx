@@ -16,8 +16,16 @@ const MODULES = [
 interface Message { role: 'user' | 'assistant'; content: string }
 interface PendingFile { path: string; content: string }
 
+const PROVIDERS = [
+  { id: 'anthropic', label: 'Claude (Anthropic)' },
+  { id: 'openai', label: 'GPT-4o (OpenAI)' },
+] as const
+
+type Provider = typeof PROVIDERS[number]['id']
+
 export default function Dashboard() {
   const [activeSite, setActiveSite] = useState<SiteConfig>(SITES[0])
+  const [provider, setProvider] = useState<Provider>('anthropic')
   const [activeModule, setActiveModule] = useState<number | null>(null)
   const [messages, setMessages] = useState<Message[]>([{
     role: 'assistant',
@@ -53,6 +61,7 @@ export default function Dashboard() {
           messages: conversationRef.current,
           siteId: activeSite.id,
           siteDomain: activeSite.domain,
+          provider,
         }),
       })
 
@@ -90,7 +99,7 @@ export default function Dashboard() {
       })
     }
     setLoading(false)
-  }, [activeSite])
+  }, [activeSite, provider])
 
   const deployFiles = async () => {
     if (!pendingFiles.length) return
@@ -171,6 +180,15 @@ export default function Dashboard() {
             className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-300 outline-none cursor-pointer"
           >
             {SITES.map(s => <option key={s.id} value={s.id}>{s.name} — {s.domain}</option>)}
+          </select>
+
+          {/* AI provider selector */}
+          <select
+            value={provider}
+            onChange={e => setProvider(e.target.value as Provider)}
+            className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-300 outline-none cursor-pointer"
+          >
+            {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
 
           <a href="/settings" className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
