@@ -37,10 +37,73 @@ export default function Dashboard() {
   const [deployStatus, setDeployStatus] = useState<string | null>(null)
   const [blogs, setBlogs] = useState(0)
   const [services, setServices] = useState(0)
+  const [sessionId, setSessionId] = useState<string | null>(null)
   const conversationRef = useRef<Message[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
+  const sessionIdRef = useRef<string | null>(null)
+
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  // Load most recent session + inventory whenever the active site changes
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const [sessRes, invRes] = await Promise.all([
+          fetch(`/api/sessions?siteId=${encodeURIComponent(activeSite.id)}`),
+          fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`),
+        ])
+        if (cancelled) return
+        const sessJson = sessRes.ok ? await sessRes.json() : { sessions: [] }
+        const invJson = invRes.ok ? await invRes.json() : { blogs: 0, services: 0 }
+        setBlogs(invJson.blogs ?? 0)
+        setServices(invJson.services ?? 0)
+        const latest = sessJson.sessions?.[0]
+        if (latest) {
+          const detailRes = await fetch(`/api/sessions/${latest.id}`)
+          if (detailRes.ok && !cancelled) {
+            const detail = await detailRes.json()
+            const restored: Message[] = (detail.messages ?? []).map((m: { role: 'user' | 'assistant'; content: string }) => ({ role: m.role, content: m.content }))
+            conversationRef.current = restored
+            setSessionId(latest.id)
+            if (restored.length > 0) setMessages(restored)
+          }
+        } else {
+          setSessionId(null)
+          conversationRef.current = []
+        }
+      } catch { /* persistence is best-effort */ }
+    })()
+    return () => { cancelled = true }
+  }, [activeSite.id])
+
+  const ensureSession = useCallback(async (): Promise<string | null> => {
+    if (sessionIdRef.current) return sessionIdRef.current
+    try {
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ siteId: activeSite.id, provider }),
+      })
+      if (!res.ok) return null
+      const { id } = await res.json()
+      sessionIdRef.current = id
+      setSessionId(id)
+      return id
+    } catch { return null }
+  }, [activeSite.id, provider])
+
+  const persistMessage = useCallback(async (sid: string, role: 'user' | 'assistant', content: string) => {
+    try {
+      await fetch(`/api/sessions/${sid}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role, content }),
+      })
+    } catch { /* best-effort */ }
+  }, [])
 
   const streamAgent = useCallback(async (userMessage: string) => {
     const userMsg: Message = { role: 'user', content: userMessage }
@@ -48,6 +111,9 @@ export default function Dashboard() {
     conversationRef.current = [...conversationRef.current, userMsg]
     setLoading(true)
     setPendingFiles([])
+
+    const sid = await ensureSession()
+    if (sid) persistMessage(sid, 'user', userMessage)
 
     let fullResponse = ''
     const assistantMsg: Message = { role: 'assistant', content: '' }
@@ -82,15 +148,41 @@ export default function Dashboard() {
 
       // Parse file blocks from response
       const files = parseFileBlocks(fullResponse)
-      if (files.length > 0) setPendingFiles(files)
+      if (files.length > 0) {
+        setPendingFiles(files)
+        if (sid) {
+          fetch(`/api/sessions/${sid}/results`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              results: files.map(f => ({
+                kind: 'file', path: f.path, content: f.content, status: 'pending', siteId: activeSite.id,
+              })),
+            }),
+          }).catch(() => {})
+        }
+      }
 
       // Update inventory counts
       const blogMatch = fullResponse.match(/blog posts?:\s*(\d+)\s*\/\s*20/i)
       const serviceMatch = fullResponse.match(/service pages?:\s*(\d+)\s*\/\s*20/i)
-      if (blogMatch) setBlogs(parseInt(blogMatch[1]))
-      if (serviceMatch) setServices(parseInt(serviceMatch[1]))
+      const nextBlogs = blogMatch ? parseInt(blogMatch[1]) : null
+      const nextServices = serviceMatch ? parseInt(serviceMatch[1]) : null
+      if (nextBlogs !== null) setBlogs(nextBlogs)
+      if (nextServices !== null) setServices(nextServices)
+      if (nextBlogs !== null || nextServices !== null) {
+        fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            blogs: nextBlogs ?? blogs,
+            services: nextServices ?? services,
+          }),
+        }).catch(() => {})
+      }
 
       conversationRef.current = [...conversationRef.current, { role: 'assistant', content: fullResponse }]
+      if (sid) persistMessage(sid, 'assistant', fullResponse)
     } catch (err) {
       setMessages(prev => {
         const updated = [...prev]
@@ -99,7 +191,7 @@ export default function Dashboard() {
       })
     }
     setLoading(false)
-  }, [activeSite, provider])
+  }, [activeSite, provider, ensureSession, persistMessage, blogs, services])
 
   const deployFiles = async () => {
     if (!pendingFiles.length) return
@@ -124,6 +216,17 @@ export default function Dashboard() {
       } catch { /* continue */ }
     }
     setDeployStatus(`✓ Pushed ${pushed}/${pendingFiles.length} files → Vercel deploying...`)
+    if (sessionIdRef.current && pushed > 0) {
+      fetch(`/api/sessions/${sessionIdRef.current}/results`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          results: pendingFiles.map(f => ({
+            kind: 'deploy', path: f.path, content: f.content, status: 'pushed', siteId: activeSite.id,
+          })),
+        }),
+      }).catch(() => {})
+    }
     setTimeout(() => setDeployStatus(null), 6000)
     setPendingFiles([])
   }
@@ -149,6 +252,8 @@ export default function Dashboard() {
 
   const clearSession = () => {
     conversationRef.current = []
+    sessionIdRef.current = null
+    setSessionId(null)
     setMessages([{ role: 'assistant', content: `**Session cleared.** Active site: \`${activeSite.domain}\`` }])
     setPendingFiles([])
     setActiveModule(null)
