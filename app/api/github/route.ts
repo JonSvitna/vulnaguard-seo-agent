@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { writeRepoFile, listRepoFiles, getRepoFile } from '@/lib/github'
 
+// Lets you check what this running instance actually sees, e.g. GET /api/github
+export async function GET() {
+  const token = process.env.GITHUB_TOKEN
+  return NextResponse.json({
+    githubTokenConfigured: !!token,
+    githubTokenLength: token?.length ?? 0,
+  })
+}
+
 export async function POST(req: NextRequest) {
   const { action, repo, path, content, message, branch } = await req.json()
   const token = req.headers.get('x-github-token') || undefined
