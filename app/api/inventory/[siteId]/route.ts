@@ -6,6 +6,12 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ siteId: string }> }) {
   const { siteId } = await params
+  await query(
+    `INSERT INTO inventory (site_id, blogs, services, updated_at)
+     VALUES ($1, 0, 0, NOW())
+     ON CONFLICT (site_id) DO NOTHING`,
+    [siteId],
+  )
   const rows = await query<{ blogs: number; services: number }>(
     `SELECT blogs, services FROM inventory WHERE site_id = $1`,
     [siteId],

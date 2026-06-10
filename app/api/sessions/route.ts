@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { randomUUID } from 'crypto'
 import { query } from '@/lib/db'
 
 export const runtime = 'nodejs'
@@ -22,9 +23,10 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { siteId, provider, title } = await req.json()
   if (!siteId) return NextResponse.json({ error: 'siteId is required' }, { status: 400 })
+  const id = randomUUID()
   const rows = await query<{ id: string }>(
-    `INSERT INTO sessions (site_id, provider, title) VALUES ($1, $2, $3) RETURNING id`,
-    [siteId, provider ?? null, title ?? null],
+    `INSERT INTO sessions (id, site_id, provider, title) VALUES ($1, $2, $3, $4) RETURNING id`,
+    [id, siteId, provider ?? null, title ?? null],
   )
   return NextResponse.json({ id: rows[0].id })
 }

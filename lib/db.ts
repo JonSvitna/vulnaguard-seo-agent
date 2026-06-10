@@ -26,7 +26,7 @@ export function getPool(): Pool {
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id           UUID PRIMARY KEY,
   site_id      TEXT NOT NULL,
   provider     TEXT,
   title        TEXT,
