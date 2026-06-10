@@ -14,7 +14,7 @@ export const SITES: SiteConfig[] = [
     id: 'vulnaguard',
     name: 'Vulnaguard',
     domain: 'vulnaguard.com',
-    repo: 'jonsvitna/vulnaguard',
+    repo: 'JonSvitna/vulnaguard-site',
     branch: 'main',
     contentPath: 'app',
     framework: 'nextjs',
