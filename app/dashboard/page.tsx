@@ -36,7 +36,7 @@ function extractPhaseMarker(text: string): { phase: string; status: string } | n
 
 // Helper: determine next module after approval
 function getNextModuleAfterPhase(phase: string): number | null {
-  const phaseToModule: Record<string, number> = {
+  const phaseToModule: Record<string, number | null> = {
     research: 2,
     monitor: 3,
     audit: 4,
@@ -229,6 +229,7 @@ export default function Dashboard() {
           setBlogs(nextBlogs)
           setServices(nextServices)
           
+          // Persist to database
           fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -236,7 +237,20 @@ export default function Dashboard() {
               blogs: nextBlogs,
               services: nextServices,
             }),
-          }).catch(() => {})
+          })
+            .then(res => {
+              if (res.ok) {
+                // Refetch to ensure DB value matches UI
+                return fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`).then(r => r.json())
+              }
+            })
+            .then(data => {
+              if (data) {
+                setBlogs(data.blogs ?? nextBlogs)
+                setServices(data.services ?? nextServices)
+              }
+            })
+            .catch(() => {})
         }
       }
 
@@ -303,6 +317,15 @@ export default function Dashboard() {
             })),
           }),
         }).catch(() => {})
+
+        // Refresh inventory after successful deploy
+        fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`)
+          .then(res => res.json())
+          .then(data => {
+            setBlogs(data.blogs ?? 0)
+            setServices(data.services ?? 0)
+          })
+          .catch(() => {})
       }
 
       setTimeout(() => setDeployStatus(null), failed.length > 0 ? 12000 : 6000)
