@@ -1,5 +1,11 @@
 import { Octokit } from '@octokit/rest'
 
+function splitRepo(repo: string) {
+  const [owner, repoName] = repo.split('/')
+  if (!owner || !repoName) throw new Error('Invalid repo format. Expected owner/repo.')
+  return { owner, repoName }
+}
+
 export function getOctokit(token?: string) {
   const resolved = token || process.env.GITHUB_TOKEN
   if (!resolved) throw new Error('GITHUB_TOKEN not set. Add it in Settings or set the GITHUB_TOKEN env var.')
@@ -7,7 +13,7 @@ export function getOctokit(token?: string) {
 }
 
 export async function getRepoFile(repo: string, path: string, branch = 'main', token?: string) {
-  const [owner, repoName] = repo.split('/')
+  const { owner, repoName } = splitRepo(repo)
   const octokit = getOctokit(token)
   try {
     const { data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch })
@@ -31,7 +37,7 @@ export async function writeRepoFile(
   branch = 'main',
   token?: string
 ) {
-  const [owner, repoName] = repo.split('/')
+  const { owner, repoName } = splitRepo(repo)
   const octokit = getOctokit(token)
 
   const existing = await getRepoFile(repo, path, branch, token)
@@ -51,7 +57,7 @@ export async function writeRepoFile(
 }
 
 export async function listRepoFiles(repo: string, path: string, branch = 'main', token?: string) {
-  const [owner, repoName] = repo.split('/')
+  const { owner, repoName } = splitRepo(repo)
   const octokit = getOctokit(token)
   try {
     const { data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch })
@@ -95,4 +101,100 @@ export async function batchWriteRepoFiles(
     )
   )
   return results
+}
+
+export async function writeRepoFilesSingleCommit(
+  repo: string,
+  files: Array<{ path: string; content: string }>,
+  message: string,
+  branch = 'main',
+  token?: string
+) {
+  if (!files.length) throw new Error('No files provided for batch write.')
+
+  const { owner, repoName } = splitRepo(repo)
+  const octokit = getOctokit(token)
+
+  // Deduplicate paths so the last file content wins when duplicates appear.
+  const deduped = new Map<string, string>()
+  for (const file of files) {
+    if (!file.path || typeof file.content !== 'string') continue
+    deduped.set(file.path, file.content)
+  }
+  if (!deduped.size) throw new Error('No valid files provided for batch write.')
+
+  const ref = await octokit.git.getRef({ owner, repo: repoName, ref: `heads/${branch}` })
+  const headSha = ref.data.object.sha
+  const headCommit = await octokit.git.getCommit({ owner, repo: repoName, commit_sha: headSha })
+
+  const tree = await Promise.all(
+    Array.from(deduped.entries()).map(async ([path, content]) => {
+      const blob = await octokit.git.createBlob({
+        owner,
+        repo: repoName,
+        content,
+        encoding: 'utf-8',
+      })
+      return {
+        path,
+        mode: '100644' as const,
+        type: 'blob' as const,
+        sha: blob.data.sha,
+      }
+    }),
+  )
+
+  const newTree = await octokit.git.createTree({
+    owner,
+    repo: repoName,
+    base_tree: headCommit.data.tree.sha,
+    tree,
+  })
+
+  const commit = await octokit.git.createCommit({
+    owner,
+    repo: repoName,
+    message,
+    tree: newTree.data.sha,
+    parents: [headSha],
+  })
+
+  await octokit.git.updateRef({
+    owner,
+    repo: repoName,
+    ref: `heads/${branch}`,
+    sha: commit.data.sha,
+    force: false,
+  })
+
+  return { commitSha: commit.data.sha, fileCount: tree.length }
+}
+
+export async function listRepoTreePaths(
+  repo: string,
+  branch = 'main',
+  token?: string,
+  prefix?: string,
+) {
+  const { owner, repoName } = splitRepo(repo)
+  const octokit = getOctokit(token)
+  const ref = await octokit.git.getRef({ owner, repo: repoName, ref: `heads/${branch}` })
+  const headSha = ref.data.object.sha
+  const headCommit = await octokit.git.getCommit({ owner, repo: repoName, commit_sha: headSha })
+  const treeRes = await octokit.git.getTree({
+    owner,
+    repo: repoName,
+    tree_sha: headCommit.data.tree.sha,
+    recursive: '1',
+  })
+
+  const normalizedPrefix = (prefix || '').replace(/^\/+|\/+$/g, '')
+  return (treeRes.data.tree || [])
+    .filter((item) => item.type === 'blob' && !!item.path)
+    .map((item) => item.path as string)
+    .filter((path) =>
+      normalizedPrefix
+        ? path === normalizedPrefix || path.startsWith(`${normalizedPrefix}/`)
+        : true,
+    )
 }
