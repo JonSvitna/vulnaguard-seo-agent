@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface Setting { key: string; label: string; placeholder: string; help: string; link?: string }
 
@@ -23,7 +23,7 @@ const SETTINGS: Setting[] = [
     key: 'GITHUB_TOKEN',
     label: 'GitHub Personal Access Token',
     placeholder: 'ghp_...',
-    help: 'Needs repo scope to read/write files to your site repos.',
+    help: 'Needs repo scope to read/write files to your site repos. Saved in browser storage.',
     link: 'https://github.com/settings/tokens/new?scopes=repo&description=Vulnaguard+SEO+Agent',
   },
   {
@@ -57,18 +57,39 @@ const SETTINGS: Setting[] = [
 export default function Settings() {
   const [values, setValues] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  // Load from localStorage on mount
+  useEffect(() => {
+    const loaded: Record<string, string> = {}
+    SETTINGS.forEach(s => {
+      const v = localStorage.getItem(s.key)
+      if (v) loaded[s.key] = v
+    })
+    setValues(loaded)
+  }, [])
 
   const handleSave = () => {
-    // In production these go to Vercel env vars via API or .env.local
-    // For now, copy to clipboard as .env format
+    SETTINGS.forEach(s => {
+      const v = values[s.key]?.trim()
+      if (v) {
+        localStorage.setItem(s.key, v)
+      } else {
+        localStorage.removeItem(s.key)
+      }
+    })
+    setSaved(true)
+    setTimeout(() => setSaved(false), 3000)
+  }
+
+  const handleCopyEnv = () => {
     const envContent = Object.entries(values)
       .filter(([, v]) => v.trim())
       .map(([k, v]) => `${k}=${v}`)
       .join('\n')
-
     navigator.clipboard.writeText(envContent)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 3000)
   }
 
   return (
@@ -87,10 +108,9 @@ export default function Settings() {
       <div className="max-w-2xl mx-auto px-6 py-10">
         <h1 className="text-xl font-bold mb-1">API Configuration</h1>
         <p className="text-sm text-gray-500 mb-8">
-          Enter your API keys below. Copy to clipboard and paste into your{' '}
-          <code className="bg-white/10 px-1.5 py-0.5 rounded text-[11px] text-[#C9A84C]">.env.local</code>{' '}
-          file or add to{' '}
-          <a href="https://vercel.com/dashboard" target="_blank" rel="noopener" className="text-[#C9A84C] hover:underline">Vercel Environment Variables</a>.
+          Keys are saved in your browser and sent securely with each request. They are never stored on the server.{' '}
+          For server-side defaults, set environment variables on{' '}
+          <a href="https://railway.app" target="_blank" rel="noopener" className="text-[#C9A84C] hover:underline">Railway</a>.
         </p>
 
         <div className="space-y-5">
@@ -107,24 +127,37 @@ export default function Settings() {
                   </a>
                 )}
               </div>
-              <input
-                type="password"
-                value={values[s.key] || ''}
-                onChange={e => setValues(prev => ({ ...prev, [s.key]: e.target.value }))}
-                placeholder={s.placeholder}
-                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-gray-300 placeholder-gray-700 outline-none focus:border-[#C9A84C]/40 transition-colors"
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={values[s.key] || ''}
+                  onChange={e => setValues(prev => ({ ...prev, [s.key]: e.target.value }))}
+                  placeholder={s.placeholder}
+                  className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm font-mono text-gray-300 placeholder-gray-700 outline-none focus:border-[#C9A84C]/40 transition-colors"
+                />
+                {values[s.key] && (
+                  <span className="text-[10px] text-[#4CC98E] shrink-0">✓ saved</span>
+                )}
+              </div>
             </div>
           ))}
         </div>
 
-        <button
-          onClick={handleSave}
-          className="mt-6 w-full py-3 font-bold text-sm rounded-xl transition-all"
-          style={{ background: 'linear-gradient(135deg, #C9A84C, #8B6914)', color: '#0D0F14' }}
-        >
-          {saved ? '✓ Copied to clipboard — paste into .env.local or Vercel' : 'Copy as .env format'}
-        </button>
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={handleSave}
+            className="flex-1 py-3 font-bold text-sm rounded-xl transition-all"
+            style={{ background: 'linear-gradient(135deg, #C9A84C, #8B6914)', color: '#0D0F14' }}
+          >
+            {saved ? '✓ Saved to browser — agent will use these keys' : 'Save Keys'}
+          </button>
+          <button
+            onClick={handleCopyEnv}
+            className="px-5 py-3 text-sm text-gray-400 bg-white/[0.04] border border-white/[0.08] rounded-xl hover:text-white transition-colors"
+          >
+            {copied ? '✓ Copied' : 'Copy .env'}
+          </button>
+        </div>
 
         {/* GSC Setup Guide */}
         <div className="mt-10 bg-white/[0.02] border border-white/[0.06] rounded-xl p-6">
@@ -155,7 +188,7 @@ export default function Settings() {
               'Select repo scope (full control of private repositories)',
               'Set expiration to 1 year',
               'Copy the token — it starts with ghp_',
-              'Add as GITHUB_TOKEN above',
+              'Paste it into the GitHub Personal Access Token field above and click Save Keys',
             ].map((step, i) => (
               <li key={i} className="flex gap-3 text-xs text-gray-400">
                 <span className="text-[#C9A84C] font-mono shrink-0">{i + 1}.</span>
