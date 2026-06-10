@@ -42,6 +42,11 @@ export default function Dashboard() {
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
+  const getStoredKeys = () => ({
+    githubToken: typeof window !== 'undefined' ? localStorage.getItem('GITHUB_TOKEN') || undefined : undefined,
+    aiKey: typeof window !== 'undefined' ? localStorage.getItem(provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY') || undefined : undefined,
+  })
+
   const streamAgent = useCallback(async (userMessage: string) => {
     const userMsg: Message = { role: 'user', content: userMessage }
     setMessages(prev => [...prev, userMsg])
@@ -56,7 +61,10 @@ export default function Dashboard() {
     try {
       const res = await fetch('/api/agent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getStoredKeys().aiKey ? { 'X-AI-Key': getStoredKeys().aiKey! } : {}),
+        },
         body: JSON.stringify({
           messages: conversationRef.current,
           siteId: activeSite.id,
@@ -104,12 +112,17 @@ export default function Dashboard() {
   const deployFiles = async () => {
     if (!pendingFiles.length) return
     setDeployStatus('Pushing to GitHub...')
-    let pushed = 0
+    const { githubToken } = getStoredKeys()
+    const results: string[] = []
+
     for (const file of pendingFiles) {
       try {
         const res = await fetch('/api/github', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(githubToken ? { 'X-GitHub-Token': githubToken } : {}),
+          },
           body: JSON.stringify({
             action: 'write',
             repo: activeSite.repo,
@@ -120,18 +133,36 @@ export default function Dashboard() {
           }),
         })
         const data = await res.json()
-        if (data.success) pushed++
-      } catch { /* continue */ }
+        if (data.success) {
+          results.push(`✓ ${file.path}`)
+        } else {
+          results.push(`✗ ${file.path}: ${data.error || 'unknown error'}`)
+        }
+      } catch (err) {
+        results.push(`✗ ${file.path}: ${err instanceof Error ? err.message : 'network error'}`)
+      }
     }
-    setDeployStatus(`✓ Pushed ${pushed}/${pendingFiles.length} files → Vercel deploying...`)
-    setTimeout(() => setDeployStatus(null), 6000)
+
+    const successCount = results.filter(r => r.startsWith('✓')).length
+    const allPassed = successCount === pendingFiles.length
+    setDeployStatus(
+      allPassed
+        ? `✓ Pushed ${successCount}/${pendingFiles.length} files → Vercel deploying...`
+        : `Pushed ${successCount}/${pendingFiles.length} files. ${results.filter(r => r.startsWith('✗')).join(' | ')}`
+    )
+    setTimeout(() => setDeployStatus(null), 8000)
     setPendingFiles([])
   }
 
   const handleModule = (moduleId: number) => {
     setActiveModule(moduleId)
     const prompts: Record<number, string> = {
-      1: `Run M1 Research & Strategy for ${activeSite.domain}. Primary topic: ${activeSite.id === 'vulnaguard' ? 'CMMC compliance software' : activeSite.id === 'mectofitness' ? 'fitness coaching for busy adults' : 'Baltimore real estate investment'}. Output full keyword strategy doc with medium-match targets only.`,
+      1: `Run M1 Research & Strategy for ${activeSite.domain}. Primary topic: ${
+        activeSite.id === 'vulnaguard' ? 'CMMC compliance software' :
+        activeSite.id === 'sentinel-cmmc' ? 'CMMC compliance for defense contractors' :
+        activeSite.id === 'mectofitness' ? 'fitness coaching for busy adults' :
+        'Baltimore real estate investment'
+      }. Output full keyword strategy doc with medium-match targets only.`,
       2: `Run M2 Ranking Monitor for ${activeSite.domain}. Pull GSC data, classify into Quick Wins, Declining, Indexing Gaps, Stable. Output full ranking opportunity report.`,
       3: `Run M3 On-Page Auditor for the homepage of ${activeSite.domain}. Score all 9 elements and output specific recommendations for every failing element.`,
       4: `Run M4 On-Page Executor. Based on audit recommendations in this session, output all approved changes as exact replacement content ready to commit. Format for Next.js with generateMetadata() and JSON-LD schema.`,
@@ -147,9 +178,10 @@ export default function Dashboard() {
     setInput('')
   }
 
-  const clearSession = () => {
+  const clearSession = (site?: SiteConfig) => {
+    const s = site ?? activeSite
     conversationRef.current = []
-    setMessages([{ role: 'assistant', content: `**Session cleared.** Active site: \`${activeSite.domain}\`` }])
+    setMessages([{ role: 'assistant', content: `**Vulnaguard SEO Agent ready.**\n\nActive site: \`${s.domain}\`\n\nSelect a module or type a command.` }])
     setPendingFiles([])
     setActiveModule(null)
   }
@@ -175,7 +207,7 @@ export default function Dashboard() {
             onChange={e => {
               const site = SITES.find(s => s.id === e.target.value)!
               setActiveSite(site)
-              clearSession()
+              clearSession(site)
             }}
             className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-300 outline-none cursor-pointer"
           >
@@ -284,7 +316,7 @@ export default function Dashboard() {
             </button>
           ))}
 
-          <button onClick={clearSession} className="mt-auto w-full py-2 text-xs text-gray-600 hover:text-gray-400 border border-white/[0.05] rounded-lg transition-colors">
+          <button onClick={() => clearSession()} className="mt-auto w-full py-2 text-xs text-gray-600 hover:text-gray-400 border border-white/[0.05] rounded-lg transition-colors">
             Clear session
           </button>
         </aside>
