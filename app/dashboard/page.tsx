@@ -15,6 +15,7 @@ const MODULES = [
 
 interface Message { role: 'user' | 'assistant'; content: string }
 interface PendingFile { path: string; content: string }
+interface SessionResult { kind: string; path?: string; content: string; status?: string }
 
 const PROVIDERS = [
   { id: 'anthropic', label: 'Claude (Anthropic)' },
@@ -61,6 +62,7 @@ export default function Dashboard() {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [recoveredFiles, setRecoveredFiles] = useState<PendingFile[]>([])
   const [showRecoveredPreview, setShowRecoveredPreview] = useState(false)
+  const [recentResults, setRecentResults] = useState<SessionResult[]>([])
   const [deployStatus, setDeployStatus] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null)
   const [blogs, setBlogs] = useState(0)
   const [services, setServices] = useState(0)
@@ -77,6 +79,8 @@ export default function Dashboard() {
     githubToken: typeof window !== 'undefined' ? localStorage.getItem('GITHUB_TOKEN') || undefined : undefined,
     aiKey: typeof window !== 'undefined' ? localStorage.getItem(provider === 'openai' ? 'OPENAI_API_KEY' : 'ANTHROPIC_API_KEY') || undefined : undefined,
   })
+
+  const getSessionStorageKey = (siteId: string) => `VG_ACTIVE_SESSION_${siteId}`
 
   const refreshInventoryBaseline = useCallback(async (site: SiteConfig) => {
     try {
@@ -101,7 +105,7 @@ export default function Dashboard() {
     }
   }, [])
 
-  // Load most recent session + inventory baseline whenever the active site changes
+  // Load resumable session + inventory baseline whenever the active site changes.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -111,13 +115,33 @@ export default function Dashboard() {
         const sessJson = sessRes.ok ? await sessRes.json() : { sessions: [] }
         await refreshInventoryBaseline(activeSite)
         if (cancelled) return
-        const latest = sessJson.sessions?.[0]
-        if (latest) {
-          const detailRes = await fetch(`/api/sessions/${latest.id}`)
-          if (detailRes.ok && !cancelled) {
-            const detail = await detailRes.json()
-            const restored: Message[] = (detail.messages ?? []).map((m: { role: 'user' | 'assistant'; content: string }) => ({ role: m.role, content: m.content }))
-            const allResults: Array<{ kind: string; path?: string; content: string; status?: string }> = detail.results ?? []
+        const sessions: Array<{ id: string }> = sessJson.sessions ?? []
+        const preferredId = typeof window !== 'undefined' ? localStorage.getItem(getSessionStorageKey(activeSite.id)) : null
+
+        const pickOrder = [
+          ...(preferredId ? [preferredId] : []),
+          ...sessions.map(s => s.id).filter(id => id !== preferredId),
+        ].slice(0, 10)
+
+        let selectedDetail: { session?: { phase?: string; phase_status?: string }; messages?: Array<{ role: 'user' | 'assistant'; content: string }>; results?: SessionResult[]; id?: string } | null = null
+        let selectedId: string | null = null
+
+        for (const sid of pickOrder) {
+          const detailRes = await fetch(`/api/sessions/${sid}`)
+          if (!detailRes.ok) continue
+          const detail = await detailRes.json()
+          const hasMessages = Array.isArray(detail.messages) && detail.messages.length > 0
+          const hasResults = Array.isArray(detail.results) && detail.results.length > 0
+          if (hasMessages || hasResults || sid === preferredId) {
+            selectedDetail = detail
+            selectedId = sid
+            if (hasMessages || hasResults) break
+          }
+        }
+
+        if (selectedDetail && selectedId && !cancelled) {
+            const restored: Message[] = (selectedDetail.messages ?? []).map((m: { role: 'user' | 'assistant'; content: string }) => ({ role: m.role, content: m.content }))
+            const allResults: SessionResult[] = selectedDetail.results ?? []
             const pushedPaths = new Set(
               allResults
                 .filter(r => r.kind === 'deploy' && r.status === 'pushed' && r.path)
@@ -138,24 +162,35 @@ export default function Dashboard() {
               f => !pushedPaths.has(f.path) && !discardedPaths.has(f.path),
             )
             conversationRef.current = restored
-            setSessionId(latest.id)
+            setSessionId(selectedId)
             setRecoveredFiles(recoverable)
+            setRecentResults(allResults)
             setPendingFiles([])
             setShowRecoveredPreview(false)
-            if (detail.session?.phase && detail.session?.phase_status) {
+            if (selectedDetail.session?.phase && selectedDetail.session?.phase_status) {
               setPhaseState({
-                phase: detail.session.phase as PhaseState['phase'],
-                status: detail.session.phase_status as PhaseState['status'],
+                phase: selectedDetail.session.phase as PhaseState['phase'],
+                status: selectedDetail.session.phase_status as PhaseState['status'],
               })
             } else {
               setPhaseState({ phase: null, status: null })
             }
-            if (restored.length > 0) setMessages(restored)
-          }
+            if (restored.length > 0) {
+              setMessages(restored)
+            } else if (allResults.length > 0) {
+              setMessages([{
+                role: 'assistant',
+                content: `Restored prior session for ${activeSite.domain}.\n\nRecovered results: ${allResults.length} entries. Use the recovered files banner to re-queue deployable files.`,
+              }])
+            }
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(getSessionStorageKey(activeSite.id), selectedId)
+            }
         } else {
           setSessionId(null)
           conversationRef.current = []
           setRecoveredFiles([])
+          setRecentResults([])
           setPendingFiles([])
           setShowRecoveredPreview(false)
           setPhaseState({ phase: null, status: null })
@@ -177,6 +212,9 @@ export default function Dashboard() {
       const { id } = await res.json()
       sessionIdRef.current = id
       setSessionId(id)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(getSessionStorageKey(activeSite.id), id)
+      }
       return id
     } catch { return null }
   }, [activeSite.id, provider])
@@ -263,6 +301,10 @@ export default function Dashboard() {
       if (files.length > 0) {
         setPendingFiles(files)
         setRecoveredFiles([])
+        setRecentResults(prev => [
+          ...files.map(f => ({ kind: 'file', path: f.path, content: f.content, status: 'pending' })),
+          ...prev,
+        ])
         setShowRecoveredPreview(false)
         if (sid) {
           fetch(`/api/sessions/${sid}/results`, {
@@ -332,6 +374,11 @@ export default function Dashboard() {
         }).catch(() => {})
       }
 
+      setRecentResults(prev => [
+        ...pendingFiles.map(f => ({ kind: 'deploy', path: f.path, content: f.content, status: 'pushed' })),
+        ...prev,
+      ])
+
       await refreshInventoryBaseline(activeSite)
 
       setTimeout(() => setDeployStatus(null), 6000)
@@ -375,9 +422,13 @@ export default function Dashboard() {
     setMessages([{ role: 'assistant', content: `**Vulnaguard SEO Agent ready.**\n\nActive site: \`${s.domain}\`\n\nSelect a module or type a command.` }])
     setPendingFiles([])
     setRecoveredFiles([])
+    setRecentResults([])
     setShowRecoveredPreview(false)
     setPhaseState({ phase: null, status: null })
     setActiveModule(null)
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(getSessionStorageKey(s.id))
+    }
   }
 
   return (
@@ -541,6 +592,22 @@ export default function Dashboard() {
             <p className="text-[11px] font-mono text-gray-400 break-all">{activeSite.repo}</p>
             <p className="text-[10px] text-gray-600 mt-1">branch: {activeSite.branch}</p>
           </div>
+
+          {/* Prior results */}
+          {recentResults.length > 0 && (
+            <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-3 mb-1">
+              <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-1">Prior Results</p>
+              <p className="text-[10px] text-gray-500 mb-2">{recentResults.length} restored</p>
+              <div className="space-y-1 max-h-24 overflow-y-auto">
+                {recentResults.slice(0, 8).map((r, idx) => (
+                  <div key={`${r.kind}-${r.path ?? idx}`} className="text-[10px] text-gray-400 truncate">
+                    <span className="text-gray-500">{r.kind}</span>
+                    {r.path ? `: ${r.path}` : ''}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Full pass */}
           <button
