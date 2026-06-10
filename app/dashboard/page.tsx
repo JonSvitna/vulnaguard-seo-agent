@@ -34,7 +34,7 @@ export default function Dashboard() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
-  const [deployStatus, setDeployStatus] = useState<string | null>(null)
+  const [deployStatus, setDeployStatus] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null)
   const [blogs, setBlogs] = useState(0)
   const [services, setServices] = useState(0)
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -195,8 +195,11 @@ export default function Dashboard() {
 
   const deployFiles = async () => {
     if (!pendingFiles.length) return
-    setDeployStatus('Pushing to GitHub...')
-    let pushed = 0
+    setDeployStatus({ type: 'info', message: 'Pushing to GitHub...' })
+    const succeeded: PendingFile[] = []
+    const failed: PendingFile[] = []
+    let lastError: string | null = null
+
     for (const file of pendingFiles) {
       try {
         const res = await fetch('/api/github', {
@@ -212,23 +215,40 @@ export default function Dashboard() {
           }),
         })
         const data = await res.json()
-        if (data.success) pushed++
-      } catch { /* continue */ }
+        if (res.ok && data.success) {
+          succeeded.push(file)
+        } else {
+          failed.push(file)
+          lastError = data.error || `HTTP ${res.status}`
+        }
+      } catch (err) {
+        failed.push(file)
+        lastError = err instanceof Error ? err.message : 'Network error'
+      }
     }
-    setDeployStatus(`✓ Pushed ${pushed}/${pendingFiles.length} files → Vercel deploying...`)
-    if (sessionIdRef.current && pushed > 0) {
+
+    if (failed.length === 0) {
+      setDeployStatus({ type: 'success', message: `✓ Pushed ${succeeded.length}/${pendingFiles.length} files → Vercel deploying...` })
+    } else if (succeeded.length > 0) {
+      setDeployStatus({ type: 'error', message: `Pushed ${succeeded.length}/${pendingFiles.length} files. ${failed.length} failed: ${lastError}` })
+    } else {
+      setDeployStatus({ type: 'error', message: `Push failed — no files were committed to ${activeSite.repo}. ${lastError}` })
+    }
+
+    if (sessionIdRef.current && succeeded.length > 0) {
       fetch(`/api/sessions/${sessionIdRef.current}/results`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          results: pendingFiles.map(f => ({
+          results: succeeded.map(f => ({
             kind: 'deploy', path: f.path, content: f.content, status: 'pushed', siteId: activeSite.id,
           })),
         }),
       }).catch(() => {})
     }
-    setTimeout(() => setDeployStatus(null), 6000)
-    setPendingFiles([])
+
+    setTimeout(() => setDeployStatus(null), failed.length > 0 ? 12000 : 6000)
+    setPendingFiles(failed)
   }
 
   const handleModule = (moduleId: number) => {
@@ -306,8 +326,16 @@ export default function Dashboard() {
 
       {/* Deploy banner */}
       {deployStatus && (
-        <div className="bg-[#4CC98E]/10 border-b border-[#4CC98E]/20 px-6 py-2 text-xs text-[#4CC98E]">
-          {deployStatus}
+        <div
+          className={`border-b px-6 py-2 text-xs ${
+            deployStatus.type === 'error'
+              ? 'bg-[#C94C4C]/10 border-[#C94C4C]/20 text-[#C94C4C]'
+              : deployStatus.type === 'success'
+                ? 'bg-[#4CC98E]/10 border-[#4CC98E]/20 text-[#4CC98E]'
+                : 'bg-[#C9A84C]/10 border-[#C9A84C]/20 text-[#C9A84C]'
+          }`}
+        >
+          {deployStatus.message}
         </div>
       )}
 
