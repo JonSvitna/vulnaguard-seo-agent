@@ -7,8 +7,9 @@ type Provider = 'anthropic' | 'openai'
 export async function POST(req: NextRequest) {
   const { messages, siteId, siteDomain, provider } = await req.json()
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
-  const openaiKey = process.env.OPENAI_API_KEY
+  const headerKey = req.headers.get('x-ai-key') || undefined
+  const anthropicKey = (provider === 'anthropic' ? headerKey : undefined) || process.env.ANTHROPIC_API_KEY
+  const openaiKey = (provider === 'openai' ? headerKey : undefined) || process.env.OPENAI_API_KEY
 
   const activeProvider: Provider | null =
     provider === 'openai' || provider === 'anthropic'
