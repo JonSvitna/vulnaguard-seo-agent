@@ -48,6 +48,7 @@ export default function Dashboard() {
   })
 
   const streamAgent = useCallback(async (userMessage: string) => {
+    const { aiKey } = getStoredKeys()
     const userMsg: Message = { role: 'user', content: userMessage }
     setMessages(prev => [...prev, userMsg])
     conversationRef.current = [...conversationRef.current, userMsg]
@@ -63,7 +64,7 @@ export default function Dashboard() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(getStoredKeys().aiKey ? { 'X-AI-Key': getStoredKeys().aiKey! } : {}),
+          ...(aiKey ? { 'X-AI-Key': aiKey } : {}),
         },
         body: JSON.stringify({
           messages: conversationRef.current,
