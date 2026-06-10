@@ -74,3 +74,25 @@ export function parseFileBlocks(text: string): Array<{ path: string; content: st
   }
   return files
 }
+
+export async function batchWriteRepoFiles(
+  repo: string,
+  files: Array<{ path: string; content: string }>,
+  messageSuffix?: string,
+  branch = 'main',
+  token?: string
+) {
+  const results = await Promise.all(
+    files.map(f =>
+      writeRepoFile(
+        repo,
+        f.path,
+        f.content,
+        `SEO Agent: add/update ${f.path}${messageSuffix ? ` (${messageSuffix})` : ''}`,
+        branch,
+        token
+      )
+    )
+  )
+  return results
+}

@@ -23,10 +23,35 @@ const PROVIDERS = [
 
 type Provider = typeof PROVIDERS[number]['id']
 
+interface PhaseState {
+  phase: 'research' | 'monitor' | 'audit' | 'execute' | 'factory' | 'images' | null
+  status: 'pending' | 'ready' | 'approved' | null
+}
+
+// Helper: parse phase marker from response
+function extractPhaseMarker(text: string): { phase: string; status: string } | null {
+  const match = text.match(/<!-- PHASE:(\w+):(\w+) -->/)
+  return match ? { phase: match[1], status: match[2] } : null
+}
+
+// Helper: determine next module after approval
+function getNextModuleAfterPhase(phase: string): number | null {
+  const phaseToModule: Record<string, number> = {
+    research: 2,
+    monitor: 3,
+    audit: 4,
+    factory: 6, // M5 starts from M3 approval
+    execute: 5,
+    images: null,
+  }
+  return phaseToModule[phase] || null
+}
+
 export default function Dashboard() {
   const [activeSite, setActiveSite] = useState<SiteConfig>(SITES[0])
   const [provider, setProvider] = useState<Provider>('anthropic')
   const [activeModule, setActiveModule] = useState<number | null>(null)
+  const [phaseState, setPhaseState] = useState<PhaseState>({ phase: null, status: null })
   const [messages, setMessages] = useState<Message[]>([{
     role: 'assistant',
     content: `**Vulnaguard SEO Agent ready.**\n\nActive site: \`${SITES[0].domain}\`\n\nSelect a module or type a command. Use **Full SEO Pass** to run M1→M2→M3 in sequence.\n\nAll approved changes push directly to GitHub → auto-deploy on Vercel.`,
@@ -157,6 +182,28 @@ export default function Dashboard() {
 
       // Parse file blocks from response
       const files = parseFileBlocks(fullResponse)
+      
+      // Parse phase readiness marker
+      const phaseMarker = extractPhaseMarker(fullResponse)
+      if (phaseMarker) {
+        setPhaseState({
+          phase: phaseMarker.phase as PhaseState['phase'],
+          status: phaseMarker.status as PhaseState['status'],
+        })
+        
+        // Update session phase in DB
+        if (sid) {
+          fetch(`/api/sessions/${sid}/phase`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phase: phaseMarker.phase,
+              status: phaseMarker.status,
+            }),
+          }).catch(() => {})
+        }
+      }
+      
       if (files.length > 0) {
         setPendingFiles(files)
         if (sid) {
@@ -170,24 +217,27 @@ export default function Dashboard() {
             }),
           }).catch(() => {})
         }
-      }
 
-      // Update inventory counts
-      const blogMatch = fullResponse.match(/blog posts?:\s*(\d+)\s*\/\s*20/i)
-      const serviceMatch = fullResponse.match(/service pages?:\s*(\d+)\s*\/\s*20/i)
-      const nextBlogs = blogMatch ? parseInt(blogMatch[1]) : null
-      const nextServices = serviceMatch ? parseInt(serviceMatch[1]) : null
-      if (nextBlogs !== null) setBlogs(nextBlogs)
-      if (nextServices !== null) setServices(nextServices)
-      if (nextBlogs !== null || nextServices !== null) {
-        fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            blogs: nextBlogs ?? blogs,
-            services: nextServices ?? services,
-          }),
-        }).catch(() => {})
+        // Update inventory by counting files with blog/service paths
+        const blogCount = files.filter(f => f.path.toLowerCase().includes('blog')).length
+        const serviceCount = files.filter(f => f.path.toLowerCase().includes('service')).length
+        
+        if (blogCount > 0 || serviceCount > 0) {
+          const nextBlogs = blogs + blogCount
+          const nextServices = services + serviceCount
+          
+          setBlogs(nextBlogs)
+          setServices(nextServices)
+          
+          fetch(`/api/inventory/${encodeURIComponent(activeSite.id)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              blogs: nextBlogs,
+              services: nextServices,
+            }),
+          }).catch(() => {})
+        }
       }
 
       conversationRef.current = [...conversationRef.current, { role: 'assistant', content: fullResponse }]
@@ -206,13 +256,11 @@ export default function Dashboard() {
     if (!pendingFiles.length) return
     setDeployStatus({ type: 'info', message: 'Pushing to GitHub...' })
     const { githubToken } = getStoredKeys()
-    const succeeded: PendingFile[] = []
-    const failed: PendingFile[] = []
-    let lastError: string | null = null
 
-    for (const file of pendingFiles) {
-      try {
-        const res = await fetch('/api/github', {
+    try {
+      // Batch all file pushes with Promise.all
+      const pushPromises = pendingFiles.map(file =>
+        fetch('/api/github', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -226,42 +274,44 @@ export default function Dashboard() {
             message: `SEO Agent: add/update ${file.path}`,
             branch: activeSite.branch,
           }),
+        }).then(async res => {
+          const data = await res.json()
+          return { file, res, data }
         })
-        const data = await res.json()
-        if (res.ok && data.success) {
-          succeeded.push(file)
-        } else {
-          failed.push(file)
-          lastError = data.error || `HTTP ${res.status}`
-        }
-      } catch (err) {
-        failed.push(file)
-        lastError = err instanceof Error ? err.message : 'Network error'
+      )
+
+      const results = await Promise.all(pushPromises)
+      const succeeded = results.filter(r => r.res.ok && r.data.success).map(r => r.file)
+      const failed = results.filter(r => !r.res.ok || !r.data.success).map(r => r.file)
+      const errors = results.filter(r => !r.res.ok || !r.data.success).map(r => r.data.error || `HTTP ${r.res.status}`)
+
+      if (failed.length === 0) {
+        setDeployStatus({ type: 'success', message: `✓ Pushed ${succeeded.length}/${pendingFiles.length} files → Vercel deploying...` })
+      } else if (succeeded.length > 0) {
+        setDeployStatus({ type: 'error', message: `Pushed ${succeeded.length}/${pendingFiles.length} files. ${failed.length} failed: ${errors[0]}` })
+      } else {
+        setDeployStatus({ type: 'error', message: `Push failed — no files were committed to ${activeSite.repo}. ${errors[0]}` })
       }
-    }
 
-    if (failed.length === 0) {
-      setDeployStatus({ type: 'success', message: `✓ Pushed ${succeeded.length}/${pendingFiles.length} files → Vercel deploying...` })
-    } else if (succeeded.length > 0) {
-      setDeployStatus({ type: 'error', message: `Pushed ${succeeded.length}/${pendingFiles.length} files. ${failed.length} failed: ${lastError}` })
-    } else {
-      setDeployStatus({ type: 'error', message: `Push failed — no files were committed to ${activeSite.repo}. ${lastError}` })
-    }
+      if (sessionIdRef.current && succeeded.length > 0) {
+        fetch(`/api/sessions/${sessionIdRef.current}/results`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            results: succeeded.map(f => ({
+              kind: 'deploy', path: f.path, content: f.content, status: 'pushed', siteId: activeSite.id,
+            })),
+          }),
+        }).catch(() => {})
+      }
 
-    if (sessionIdRef.current && succeeded.length > 0) {
-      fetch(`/api/sessions/${sessionIdRef.current}/results`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          results: succeeded.map(f => ({
-            kind: 'deploy', path: f.path, content: f.content, status: 'pushed', siteId: activeSite.id,
-          })),
-        }),
-      }).catch(() => {})
+      setTimeout(() => setDeployStatus(null), failed.length > 0 ? 12000 : 6000)
+      setPendingFiles(failed)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setDeployStatus({ type: 'error', message: `Push failed: ${message}` })
+      setTimeout(() => setDeployStatus(null), 8000)
     }
-
-    setTimeout(() => setDeployStatus(null), failed.length > 0 ? 12000 : 6000)
-    setPendingFiles(failed)
   }
 
   const handleModule = (moduleId: number) => {
@@ -491,6 +541,35 @@ export default function Dashboard() {
               Send
             </button>
           </div>
+
+          {/* Phase approval gate */}
+          {phaseState.phase && phaseState.status === 'ready' && (
+            <div className="border-t border-[#4CC98E]/30 px-6 py-3 bg-[#4CC98E]/5 flex items-center justify-between">
+              <span className="text-xs text-[#4CC98E]">
+                <strong>{phaseState.phase.toUpperCase()}</strong> phase ready for approval
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const nextModuleId = getNextModuleAfterPhase(phaseState.phase!)
+                    if (nextModuleId) {
+                      setPhaseState({ phase: null, status: null })
+                      handleModule(nextModuleId)
+                    }
+                  }}
+                  className="bg-[#4CC98E] text-black text-xs font-bold px-4 py-1.5 rounded hover:bg-[#5ed59f] transition-colors"
+                >
+                  ✓ Approve & Continue
+                </button>
+                <button
+                  onClick={() => setPhaseState({ phase: null, status: null })}
+                  className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-2"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
         </main>
       </div>
     </div>

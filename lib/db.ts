@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   site_id      TEXT NOT NULL,
   provider     TEXT,
   title        TEXT,
+  phase        TEXT DEFAULT 'research',
+  phase_status TEXT DEFAULT 'pending',
   created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

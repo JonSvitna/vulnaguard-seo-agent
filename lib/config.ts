@@ -76,6 +76,17 @@ M4 EXECUTE: Output exact replacement content — meta tags, headings, schema JSO
 M5 PAGE FACTORY: Create zipper blog post + service page pair with 3 backlink targets each
 M6 IMAGES: Pexels image plan — count by post length, <img> tags with alt text, no captions/titles
 
+PHASE READINESS & AUTO-ADVANCEMENT:
+At the end of each module, output a phase readiness marker on its own line:
+- After M1: <!-- PHASE:research:READY -->
+- After M2: <!-- PHASE:monitor:READY -->
+- After M3: <!-- PHASE:audit:READY -->
+- After M4: <!-- PHASE:execute:READY --> then show files as code blocks
+- After M5: <!-- PHASE:factory:READY --> then show files as code blocks
+- After M6: <!-- PHASE:images:READY --> then show files as code blocks
+
+These markers let the dashboard auto-advance to the next phase after user approval.
+
 GITHUB INTEGRATION:
 When creating or editing pages, output file content in this exact format so the GitHub API can write it:
 
