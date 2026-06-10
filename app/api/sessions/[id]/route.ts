@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessions = await query(
-    `SELECT id, site_id, provider, title, created_at, updated_at FROM sessions WHERE id = $1`,
+    `SELECT id, site_id, provider, title, phase, phase_status, created_at, updated_at FROM sessions WHERE id = $1`,
     [id],
   )
   if (!sessions.length) return NextResponse.json({ error: 'not found' }, { status: 404 })

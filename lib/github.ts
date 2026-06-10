@@ -6,15 +6,17 @@ function splitRepo(repo: string) {
   return { owner, repoName }
 }
 
-export function getOctokit(token?: string) {
+export function getOctokit(token?: string, requireAuth = false) {
   const resolved = token || process.env.GITHUB_TOKEN
-  if (!resolved) throw new Error('GITHUB_TOKEN not set. Add it in Settings or set the GITHUB_TOKEN env var.')
-  return new Octokit({ auth: resolved })
+  if (!resolved && requireAuth) {
+    throw new Error('GITHUB_TOKEN not set. Add it in Settings or set the GITHUB_TOKEN env var.')
+  }
+  return resolved ? new Octokit({ auth: resolved }) : new Octokit()
 }
 
 export async function getRepoFile(repo: string, path: string, branch = 'main', token?: string) {
   const { owner, repoName } = splitRepo(repo)
-  const octokit = getOctokit(token)
+  const octokit = getOctokit(token, false)
   try {
     const { data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch })
     if ('content' in data) {
@@ -38,7 +40,7 @@ export async function writeRepoFile(
   token?: string
 ) {
   const { owner, repoName } = splitRepo(repo)
-  const octokit = getOctokit(token)
+  const octokit = getOctokit(token, true)
 
   const existing = await getRepoFile(repo, path, branch, token)
 
@@ -58,7 +60,7 @@ export async function writeRepoFile(
 
 export async function listRepoFiles(repo: string, path: string, branch = 'main', token?: string) {
   const { owner, repoName } = splitRepo(repo)
-  const octokit = getOctokit(token)
+  const octokit = getOctokit(token, false)
   try {
     const { data } = await octokit.repos.getContent({ owner, repo: repoName, path, ref: branch })
     if (Array.isArray(data)) {
@@ -113,7 +115,7 @@ export async function writeRepoFilesSingleCommit(
   if (!files.length) throw new Error('No files provided for batch write.')
 
   const { owner, repoName } = splitRepo(repo)
-  const octokit = getOctokit(token)
+  const octokit = getOctokit(token, true)
 
   // Deduplicate paths so the last file content wins when duplicates appear.
   const deduped = new Map<string, string>()
@@ -177,7 +179,7 @@ export async function listRepoTreePaths(
   prefix?: string,
 ) {
   const { owner, repoName } = splitRepo(repo)
-  const octokit = getOctokit(token)
+  const octokit = getOctokit(token, false)
   const ref = await octokit.git.getRef({ owner, repo: repoName, ref: `heads/${branch}` })
   const headSha = ref.data.object.sha
   const headCommit = await octokit.git.getCommit({ owner, repo: repoName, commit_sha: headSha })

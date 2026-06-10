@@ -59,6 +59,8 @@ export default function Dashboard() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
+  const [recoveredFiles, setRecoveredFiles] = useState<PendingFile[]>([])
+  const [showRecoveredPreview, setShowRecoveredPreview] = useState(false)
   const [deployStatus, setDeployStatus] = useState<{ type: 'info' | 'success' | 'error'; message: string } | null>(null)
   const [blogs, setBlogs] = useState(0)
   const [services, setServices] = useState(0)
@@ -115,13 +117,48 @@ export default function Dashboard() {
           if (detailRes.ok && !cancelled) {
             const detail = await detailRes.json()
             const restored: Message[] = (detail.messages ?? []).map((m: { role: 'user' | 'assistant'; content: string }) => ({ role: m.role, content: m.content }))
+            const allResults: Array<{ kind: string; path?: string; content: string; status?: string }> = detail.results ?? []
+            const pushedPaths = new Set(
+              allResults
+                .filter(r => r.kind === 'deploy' && r.status === 'pushed' && r.path)
+                .map(r => r.path as string),
+            )
+            const discardedPaths = new Set(
+              allResults
+                .filter(r => r.kind === 'file' && r.status === 'discarded' && r.path)
+                .map(r => r.path as string),
+            )
+            const latestFileByPath = new Map<string, PendingFile>()
+            for (const r of allResults) {
+              if (r.kind === 'file' && r.path && typeof r.content === 'string') {
+                latestFileByPath.set(r.path, { path: r.path, content: r.content })
+              }
+            }
+            const recoverable = Array.from(latestFileByPath.values()).filter(
+              f => !pushedPaths.has(f.path) && !discardedPaths.has(f.path),
+            )
             conversationRef.current = restored
             setSessionId(latest.id)
+            setRecoveredFiles(recoverable)
+            setPendingFiles([])
+            setShowRecoveredPreview(false)
+            if (detail.session?.phase && detail.session?.phase_status) {
+              setPhaseState({
+                phase: detail.session.phase as PhaseState['phase'],
+                status: detail.session.phase_status as PhaseState['status'],
+              })
+            } else {
+              setPhaseState({ phase: null, status: null })
+            }
             if (restored.length > 0) setMessages(restored)
           }
         } else {
           setSessionId(null)
           conversationRef.current = []
+          setRecoveredFiles([])
+          setPendingFiles([])
+          setShowRecoveredPreview(false)
+          setPhaseState({ phase: null, status: null })
         }
       } catch { /* persistence is best-effort */ }
     })()
@@ -225,6 +262,8 @@ export default function Dashboard() {
       
       if (files.length > 0) {
         setPendingFiles(files)
+        setRecoveredFiles([])
+        setShowRecoveredPreview(false)
         if (sid) {
           fetch(`/api/sessions/${sid}/results`, {
             method: 'POST',
@@ -335,6 +374,9 @@ export default function Dashboard() {
     setSessionId(null)
     setMessages([{ role: 'assistant', content: `**Vulnaguard SEO Agent ready.**\n\nActive site: \`${s.domain}\`\n\nSelect a module or type a command.` }])
     setPendingFiles([])
+    setRecoveredFiles([])
+    setShowRecoveredPreview(false)
+    setPhaseState({ phase: null, status: null })
     setActiveModule(null)
   }
 
@@ -395,6 +437,63 @@ export default function Dashboard() {
           }`}
         >
           {deployStatus.message}
+        </div>
+      )}
+
+      {/* Recovered files banner (reload-safe confirmation gate) */}
+      {recoveredFiles.length > 0 && pendingFiles.length === 0 && (
+        <div className="bg-[#4C8EC9]/10 border-b border-[#4C8EC9]/20 px-6 py-2">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-[#4C8EC9]">
+              Recovered {recoveredFiles.length} generated file{recoveredFiles.length > 1 ? 's' : ''} from the last session.
+            </span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowRecoveredPreview(prev => !prev)}
+                className="text-xs text-gray-400 hover:text-gray-200 transition-colors"
+              >
+                {showRecoveredPreview ? 'Hide' : 'Review'}
+              </button>
+              <button
+                onClick={() => {
+                  setPendingFiles(recoveredFiles)
+                  setRecoveredFiles([])
+                  setShowRecoveredPreview(false)
+                }}
+                className="bg-[#4C8EC9] text-black text-xs font-bold px-3 py-1 rounded hover:bg-[#62a3db] transition-colors"
+              >
+                Re-queue for Deploy
+              </button>
+              <button
+                onClick={() => {
+                  if (sessionIdRef.current) {
+                    fetch(`/api/sessions/${sessionIdRef.current}/results`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        results: recoveredFiles.map(f => ({
+                          kind: 'file', path: f.path, content: f.content, status: 'discarded', siteId: activeSite.id,
+                        })),
+                      }),
+                    }).catch(() => {})
+                  }
+                  setRecoveredFiles([])
+                  setShowRecoveredPreview(false)
+                }}
+                className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              >
+                Discard
+              </button>
+            </div>
+          </div>
+          {showRecoveredPreview && (
+            <div className="mt-2 text-[10px] text-gray-400">
+              {recoveredFiles.slice(0, 8).map(f => (
+                <span key={f.path} className="inline-block bg-white/10 px-1 rounded mr-1 mb-1">{f.path}</span>
+              ))}
+              {recoveredFiles.length > 8 && <span className="text-gray-500">+{recoveredFiles.length - 8} more</span>}
+            </div>
+          )}
         </div>
       )}
 

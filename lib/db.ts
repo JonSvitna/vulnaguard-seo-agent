@@ -72,6 +72,8 @@ export async function ensureSchema(): Promise<void> {
     global.__pgInit = (async () => {
       const pool = getPool()
       await pool.query(SCHEMA)
+      await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS phase TEXT DEFAULT 'research'`)
+      await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS phase_status TEXT DEFAULT 'pending'`)
     })().catch((err) => {
       global.__pgInit = undefined
       throw err
