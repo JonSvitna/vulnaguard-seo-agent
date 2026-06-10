@@ -468,6 +468,10 @@ export default function Dashboard() {
             {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
 
+          <a href="/dashboard/marketing-agents" className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
+            Marketing Agents
+          </a>
+
           <a href="/settings" className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
             ⚙ Settings
           </a>
