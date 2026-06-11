@@ -6,7 +6,7 @@ import { GeneratingScreen } from "@/components/content-pipeline/GeneratingScreen
 import { Dashboard } from "@/components/content-pipeline/Dashboard";
 import type {
   CaptureMode,
-  GeneratedContent,
+  ContentPipelineRecord,
 } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
 
 type View = "capture" | "generating" | "dashboard";
@@ -22,7 +22,7 @@ export default function ContentPipelinePage() {
   const [view, setView] = useState<View>("capture");
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState("");
-  const [content, setContent] = useState<GeneratedContent | null>(null);
+  const [content, setContent] = useState<ContentPipelineRecord | null>(null);
   const [error, setError] = useState("");
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 

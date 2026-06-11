@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { PlatformCard } from "./PlatformCard";
 import { VideoCard } from "./VideoCard";
-import type { GeneratedContent } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
+import type { ContentPipelineRecord } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
 
 interface DashboardProps {
-  content: GeneratedContent;
+  content: ContentPipelineRecord;
   onReset: () => void;
   error: string;
 }
@@ -23,28 +23,33 @@ export function Dashboard({ content, onReset, error }: DashboardProps) {
     youtube_short: content.youtube_short,
   });
   const [discarded, setDiscarded] = useState<Record<string, boolean>>({});
-  const [hyperframesResult, setHyperframesResult] = useState<string | null>(null);
-  const [hfGenerating, setHfGenerating] = useState(false);
-  const [hfError, setHfError] = useState("");
+  const [script, setScript] = useState<string | null>(content.video_script ?? null);
+  const [scriptGenerating, setScriptGenerating] = useState(false);
+  const [scriptError, setScriptError] = useState("");
 
   const visiblePosts = PLATFORMS.filter((p) => !discarded[p]);
 
-  const generateVideo = async () => {
-    setHfGenerating(true);
-    setHfError("");
+  const generateScript = async () => {
+    setScriptGenerating(true);
+    setScriptError("");
     try {
-      const res = await fetch("/api/content-pipeline/hyperframes", {
+      const res = await fetch("/api/content-pipeline/script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ brief: content.video_brief }),
+        body: JSON.stringify({
+          recordId: content.id,
+          brief: content.video_brief,
+          coreIdea: content.core_idea,
+          brand: content.brand,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      setHyperframesResult(data.message);
+      setScript(data.script);
     } catch (err: any) {
-      setHfError(err.message ?? "HyperFrames request failed.");
+      setScriptError(err.message ?? "Script generation failed.");
     } finally {
-      setHfGenerating(false);
+      setScriptGenerating(false);
     }
   };
 
@@ -115,16 +120,16 @@ export function Dashboard({ content, onReset, error }: DashboardProps) {
 
       {tab === "video" && (
         <div>
-          {hfError && (
+          {scriptError && (
             <div className="mb-4 text-red-400 text-sm px-3.5 py-2.5 bg-red-500/10 rounded-lg border border-red-500/20">
-              {hfError}
+              {scriptError}
             </div>
           )}
           <VideoCard
             brief={content.video_brief}
-            hyperframesResult={hyperframesResult}
-            onGenerate={generateVideo}
-            generating={hfGenerating}
+            script={script}
+            onGenerate={generateScript}
+            generating={scriptGenerating}
           />
         </div>
       )}

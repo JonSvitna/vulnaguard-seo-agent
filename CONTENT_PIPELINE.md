@@ -8,7 +8,7 @@ AI-powered content engine. Drop in a raw idea, voice memo, or video description 
 - Facebook post
 - YouTube long-form description (SEO-structured)
 - YouTube Shorts script
-- HyperFrames video brief (hook, key points, CTA)
+- Video brief (hook, key points, CTA) + an on-demand full speaking script
 
 ## File structure
 
@@ -16,7 +16,7 @@ AI-powered content engine. Drop in a raw idea, voice memo, or video description 
 app/
   api/content-pipeline/
     generate/route.ts         ← POST /api/content-pipeline/generate
-    hyperframes/route.ts      ← POST /api/content-pipeline/hyperframes
+    script/route.ts           ← POST /api/content-pipeline/script
   content-pipeline/
     page.tsx                  ← UI at /content-pipeline
 
@@ -25,7 +25,7 @@ components/content-pipeline/
   GeneratingScreen.tsx        ← Progress indicator
   Dashboard.tsx               ← Review + edit cards
   PlatformCard.tsx            ← Per-platform post card
-  VideoCard.tsx               ← HyperFrames video brief card
+  VideoCard.tsx               ← Video brief + speaking script card
 
 vulnaguard-marketing-agents/
   agents/content-pipeline/
@@ -53,3 +53,16 @@ or click "Content Pipeline" in the dashboard header.
 1. Add a new system prompt in `vulnaguard-marketing-agents/agents/content-pipeline/systemPrompt.ts`
 2. Add it to the `BRAND_PROMPTS` map
 3. Pass `brand: "mectofitness"` in the API call
+
+## Video workflow (currently half-implemented)
+
+The Video tab generates a `video_brief` (hook, key points, CTA) plus an on-demand
+full speaking script via `POST /api/content-pipeline/script`, written in Sean's
+voice and sized for ~45-75 seconds on camera. The script is saved to
+`content_pipeline_records.video_script`.
+
+There is **no automated rendering step**: read the script on camera, then produce
+the final video manually — e.g. with the [HyperFrames skills](https://github.com/heygen-com/hyperframes)
+(`npx skills add heygen-com/hyperframes` in a Claude Code session, then `/hyperframes`)
+or any other editor. A live HyperFrames API integration would require a HyperFrames
+account credential that isn't configured for this app.

@@ -4,7 +4,7 @@ const STEPS = [
   { label: "Extracting core idea", threshold: 20 },
   { label: "Writing platform posts", threshold: 50 },
   { label: "Building video brief", threshold: 75 },
-  { label: "Sending to HyperFrames", threshold: 90 },
+  { label: "Finalizing video brief", threshold: 90 },
 ];
 
 interface GeneratingScreenProps {

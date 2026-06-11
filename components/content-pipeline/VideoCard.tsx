@@ -1,15 +1,25 @@
 "use client";
 
+import { useState } from "react";
 import type { VideoBrief } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
 
 interface VideoCardProps {
   brief: VideoBrief;
-  hyperframesResult: string | null;
+  script: string | null;
   onGenerate: () => void;
   generating: boolean;
 }
 
-export function VideoCard({ brief, hyperframesResult, onGenerate, generating }: VideoCardProps) {
+export function VideoCard({ brief, script, onGenerate, generating }: VideoCardProps) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    if (!script) return;
+    await navigator.clipboard.writeText(script);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <div className="bg-[#161E2E] border border-[#1F2D45] rounded-xl p-5 col-span-full">
       <div className="flex items-center gap-2.5 mb-4">
@@ -40,9 +50,40 @@ export function VideoCard({ brief, hyperframesResult, onGenerate, generating }: 
         ))}
       </div>
 
-      {hyperframesResult ? (
-        <div className="text-green-400 text-sm p-3 bg-green-400/10 rounded-lg border border-green-400/20">
-          ✓ Video project created in HyperFrames. Open HyperFrames to preview and render.
+      {script ? (
+        <div className="space-y-3">
+          <div className="bg-[#111827] rounded-lg p-4 border border-[#1F2D45]">
+            <div className="text-[#C9A84C] text-xs font-bold uppercase tracking-wider mb-2">
+              Speaking Script
+            </div>
+            <p className="text-white text-base leading-loose whitespace-pre-line font-sans">
+              {script}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleCopy}
+              className="flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200"
+              style={{
+                background: copied ? "#2ECC7122" : "#C9A84C15",
+                border: `1px solid ${copied ? "#2ECC7144" : "#C9A84C44"}`,
+                color: copied ? "#2ECC71" : "#C9A84C",
+              }}
+            >
+              {copied ? "✓ Copied" : "Copy Script"}
+            </button>
+            <button
+              onClick={onGenerate}
+              disabled={generating}
+              className="flex-1 py-2.5 rounded-lg text-sm font-semibold border border-[#1F2D45] text-[#6B7A99] hover:text-white transition-colors duration-200 disabled:cursor-not-allowed"
+              style={{ background: "none" }}
+            >
+              {generating ? "Regenerating..." : "Regenerate Script"}
+            </button>
+          </div>
+          <div className="text-[#6B7A99] text-xs leading-relaxed px-1">
+            Read this on camera, then drop the recording into HyperFrames (or any editor) to produce the final video.
+          </div>
         </div>
       ) : (
         <button
@@ -54,7 +95,7 @@ export function VideoCard({ brief, hyperframesResult, onGenerate, generating }: 
             color: generating ? "#6B7A99" : "#0D1B2E",
           }}
         >
-          {generating ? "Creating HyperFrames project..." : "Generate Video with HyperFrames →"}
+          {generating ? "Writing script..." : "Generate Speaking Script"}
         </button>
       )}
     </div>

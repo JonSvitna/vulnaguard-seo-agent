@@ -1,65 +1,73 @@
 "use client";
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, react/no-unescaped-entities */
-import { useState, useCallback } from "react";
+/* eslint-disable @typescript-eslint/no-explicit-any, react/no-unescaped-entities */
+import { useState, useEffect, useCallback } from "react";
 
-const API = "http://localhost:8000";
+// ─── Types ────────────────────────────────────────────────
+interface Lead {
+  id: number;
+  company_name: string;
+  website: string | null;
+  location: string | null;
+  org_type: string | null;
+  cmmc_level_sought: string | null;
+  employee_count: string | null;
+  contact_name: string | null;
+  contact_title: string | null;
+  contact_email: string | null;
+  contact_linkedin: string | null;
+  source: string;
+  status: string;
+  score: number;
+  score_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
-// ─── Mock data for standalone demo ───────────────────────
-const MOCK_STATS = {
-  discovered: 12, qualified: 8, disqualified: 4,
-  drafted: 6, approved: 2, sent: 3, replied: 1, total: 36,
-  recent_runs: [
-    { id: 1, agent: "scout", status: "success", leads_processed: 12, started_at: "2026-06-10 09:00:00" },
-    { id: 2, agent: "qualifier", status: "success", leads_processed: 8, started_at: "2026-06-10 09:02:00" },
-    { id: 3, agent: "copywriter", status: "success", leads_processed: 6, started_at: "2026-06-10 09:05:00" },
-  ]
+interface PendingEmail {
+  touch_number: number;
+  subject: string;
+  body: string;
+}
+
+interface PendingSequence {
+  id: number;
+  lead_id: number;
+  company_name: string;
+  location: string | null;
+  cmmc_level_sought: string | null;
+  score: number;
+  contact_name: string | null;
+  contact_email: string | null;
+  created_at: string;
+  emails: PendingEmail[];
+  linkedin_message: string;
+}
+
+interface PipelineRun {
+  id: number;
+  agent: string;
+  status: string;
+  leads_processed: number;
+  started_at: string;
+}
+
+interface Stats {
+  discovered: number;
+  qualified: number;
+  disqualified: number;
+  drafted: number;
+  approved: number;
+  sent: number;
+  replied: number;
+  total: number;
+  recent_runs: PipelineRun[];
+}
+
+const EMPTY_STATS: Stats = {
+  discovered: 0, qualified: 0, disqualified: 0,
+  drafted: 0, approved: 0, sent: 0, replied: 0, total: 0,
+  recent_runs: [],
 };
-
-const MOCK_PENDING = [
-  {
-    id: 1, company_name: "Apex Defense Solutions LLC", location: "Huntsville, AL",
-    cmmc_level_sought: "Level 2", score: 9, contact_email: "it@apexdefense.example.com",
-    contact_name: "Mike Torres", created_at: "2026-06-10 09:05:00",
-    emails: [
-      { touch_number: 1, subject: "CMMC Level 2 deadline — are you covered?", body: "Mike,\n\nMost defense subcontractors in Huntsville are 6 months from the November 2026 CMMC enforcement date and still running point-in-time assessments.\n\nThat's a problem. If your C3PAO audit finds gaps, you have no time to fix them before contracts are at risk.\n\nVulnaguard Sentinel gives Apex Defense continuous CMMC monitoring — you see your compliance posture daily, not quarterly. Evidence collection is automated, so your next assessment takes days instead of months.\n\nFree security health check (10 min): vulnaguard.com/security-health-check\n\nWorth a look before November.\n\nSean\nVulnaguard" },
-      { touch_number: 2, subject: "Re: CMMC coverage for Apex Defense", body: "Mike,\n\nFollowing up on my note last week.\n\n43% of DoD subcontractors who failed their first C3PAO assessment cited inadequate evidence documentation as the primary reason — not technical gaps, paperwork.\n\nSentinel automates that documentation layer. If you're already doing the security work, the audit prep shouldn't be the bottleneck.\n\nStill happy to do the free health check if timing works.\n\nSean" },
-      { touch_number: 3, subject: "Last note — Apex Defense + CMMC", body: "Mike,\n\nI'll keep this short — last reach out.\n\nIf CMMC compliance tooling isn't a priority right now, I get it. If that changes before November, vulnaguard.com is there.\n\nGood luck with the certification push.\n\nSean" },
-    ],
-    linkedin_message: "Hi Mike — saw Apex Defense is pursuing CMMC Level 2. I work with defense subcontractors on continuous compliance monitoring. Would love to connect."
-  },
-  {
-    id: 2, company_name: "TechShield Systems Inc", location: "Tysons Corner, VA",
-    cmmc_level_sought: "Level 2", score: 8, contact_email: "cto@techshield.example.com",
-    contact_name: "Rachel Kim", created_at: "2026-06-10 09:06:00",
-    emails: [
-      { touch_number: 1, subject: "TechShield's CMMC posture — quick question", body: "Rachel,\n\nIT services firms supporting DoD primes are in a tough spot with CMMC — you're responsible for your own Level 2 certification, but also need to demonstrate compliance to your prime contractors.\n\nDouble the audit exposure. Half the bandwidth.\n\nVulnaguard Sentinel was built for exactly this: continuous monitoring across your CUI environment with automated evidence collection for both your own assessment and client-facing reporting.\n\nFree health check takes 10 minutes: vulnaguard.com/security-health-check\n\nSean\nVulnaguard" },
-      { touch_number: 2, subject: "Re: TechShield CMMC posture", body: "Rachel,\n\nOne more thought on my previous note.\n\nIT services companies tend to have the widest CUI footprint of any subcontractor type — client data, system access, support tooling. That scope makes evidence collection the hardest part of any C3PAO audit.\n\nSentinel maps your existing controls to CMMC domains automatically. Most clients cut their SSP prep time by 60%.\n\nHappy to show you a 15-minute demo if you'd like.\n\nSean" },
-      { touch_number: 3, subject: "Closing the loop — TechShield", body: "Rachel,\n\nFinal note from me.\n\nIf CMMC tooling moves up the priority list before November, I'd love to help. If not, best of luck with the certification.\n\nvulnaguard.com when you're ready.\n\nSean" },
-    ],
-    linkedin_message: "Hi Rachel — noticed TechShield is working toward CMMC Level 2. We help IT services firms supporting DoD primes streamline their compliance monitoring. Would be great to connect."
-  },
-  {
-    id: 3, company_name: "BlueStar Federal Group", location: "San Antonio, TX",
-    cmmc_level_sought: "Level 1", score: 7, contact_email: "",
-    contact_name: "", created_at: "2026-06-10 09:07:00",
-    emails: [
-      { touch_number: 1, subject: "CMMC Level 1 — is BlueStar covered?", body: "Hi BlueStar Federal team,\n\nLogistics and supply chain subcontractors often underestimate CMMC Level 1 scope — it applies to any system that processes FCI, not just CUI.\n\nVulnaguard Sentinel's free security health check identifies your Level 1 exposure in under 10 minutes.\n\nvulnaguard.com/security-health-check\n\nSean\nVulnaguard" },
-      { touch_number: 2, subject: "Re: BlueStar CMMC Level 1", body: "Following up on my previous note about CMMC Level 1 coverage for BlueStar.\n\nLevel 1 self-attestation requirements tightened significantly in 2025 — the annual affirmation now requires documented evidence that all 17 practices are in place.\n\nSentinel makes that documentation automatic. Worth 10 minutes to check your posture.\n\nSean" },
-      { touch_number: 3, subject: "Last note — BlueStar Federal", body: "Last outreach from me.\n\nIf CMMC compliance tooling becomes relevant for BlueStar Federal, vulnaguard.com is there.\n\nGood luck with your contracts.\n\nSean" },
-    ],
-    linkedin_message: "Hi — saw BlueStar Federal Group is pursuing CMMC Level 1. We help defense logistics subcontractors with automated compliance monitoring. Would love to connect."
-  },
-];
-
-const MOCK_LEADS = [
-  { id: 1, company_name: "Apex Defense Solutions LLC", status: "drafted", score: 9, location: "Huntsville, AL", cmmc_level_sought: "Level 2", contact_email: "it@apexdefense.example.com" },
-  { id: 2, company_name: "TechShield Systems Inc", status: "drafted", score: 8, location: "Tysons Corner, VA", cmmc_level_sought: "Level 2", contact_email: "cto@techshield.example.com" },
-  { id: 3, company_name: "BlueStar Federal Group", status: "drafted", score: 7, location: "San Antonio, TX", cmmc_level_sought: "Level 1", contact_email: "" },
-  { id: 4, company_name: "Precision Defense Corp", status: "qualified", score: 8, location: "Baltimore, MD", cmmc_level_sought: "Level 2", contact_email: "" },
-  { id: 5, company_name: "Orion Systems LLC", status: "sent", score: 7, location: "Dayton, OH", cmmc_level_sought: "Level 2", contact_email: "ops@orion.example.com" },
-  { id: 6, company_name: "NovaTech Federal", status: "replied", score: 9, location: "Arlington, VA", cmmc_level_sought: "Level 2", contact_email: "it@novatech.example.com" },
-  { id: 7, company_name: "Midwest Defense Parts", status: "disqualified", score: 3, location: "Detroit, MI", cmmc_level_sought: "Unknown", contact_email: "" },
-];
 
 // ─── Helpers ──────────────────────────────────────────────
 function scoreColor(score: number) {
@@ -77,12 +85,10 @@ function statusColor(status: string) {
   return map[status] || "#666";
 }
 
-const PROVIDER_MODELS: Record<string, string[]> = {
-  claude: ["claude-haiku-4-5-20251001", "claude-sonnet-4-6", "claude-opus-4-6"],
-  openai: ["gpt-4o-mini", "gpt-4o"],
-};
+const TIERS = ["fast", "balanced", "powerful"];
+const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected"];
 
-// ─── Components ───────────────────────────────────────────
+// ─── Small components ──────────────────────────────────────
 function StatCard({ label, value, color, sub }: any) {
   return (
     <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "14px 16px" }}>
@@ -142,7 +148,7 @@ function SequenceCard({ seq, selected, onToggle, onApprove, onReject }: any) {
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{seq.company_name}</span>
-            <Badge label={seq.cmmc_level_sought} color="#4C8EC9" />
+            {seq.cmmc_level_sought && <Badge label={seq.cmmc_level_sought} color="#4C8EC9" />}
             <span style={{ fontSize: 11, color: "#555" }}>{seq.location}</span>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -216,82 +222,349 @@ function SequenceCard({ seq, selected, onToggle, onApprove, onReject }: any) {
   );
 }
 
+// ─── Modal shell ────────────────────────────────────────────
+function Modal({ title, onClose, children, width = 520 }: { title: string; onClose: () => void; children: React.ReactNode; width?: number }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 16px", overflowY: "auto" }}>
+      <div style={{ background: "#15171F", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, width: "100%", maxWidth: width, padding: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, width: 26, height: 26, color: "#888", cursor: "pointer", fontSize: 14 }}>×</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const fieldStyle: React.CSSProperties = { width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 10px", color: "#ccc", fontSize: 12, outline: "none", boxSizing: "border-box" };
+const labelStyle: React.CSSProperties = { fontSize: 10, color: "#666", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em", display: "block" };
+
+// ─── Lead modal (add / edit) ───────────────────────────────
+function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () => void; onSave: (payload: Partial<Lead>) => Promise<void> }) {
+  const [form, setForm] = useState<Partial<Lead>>(lead ?? {
+    company_name: "", website: "", location: "", org_type: "", cmmc_level_sought: "",
+    employee_count: "", contact_name: "", contact_title: "", contact_email: "", contact_linkedin: "",
+    status: "discovered", score: 0,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (k: keyof Lead) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const value = k === "score" ? Number(e.target.value) : e.target.value;
+    setForm(f => ({ ...f, [k]: value }));
+  };
+
+  const handleSave = async () => {
+    if (!form.company_name?.trim()) return;
+    setSaving(true);
+    try {
+      await onSave(form);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const FIELDS: { key: keyof Lead; label: string; placeholder?: string }[] = [
+    { key: "company_name", label: "Company Name *" },
+    { key: "website", label: "Website" },
+    { key: "location", label: "Location" },
+    { key: "org_type", label: "Org Type" },
+    { key: "cmmc_level_sought", label: "CMMC Level Sought" },
+    { key: "employee_count", label: "Employee Count" },
+    { key: "contact_name", label: "Contact Name" },
+    { key: "contact_title", label: "Contact Title" },
+    { key: "contact_email", label: "Contact Email" },
+    { key: "contact_linkedin", label: "Contact LinkedIn" },
+  ];
+
+  return (
+    <Modal title={lead ? "Edit Lead" : "Add Lead"} onClose={onClose}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {FIELDS.map(f => (
+          <div key={f.key} style={f.key === "company_name" ? { gridColumn: "1 / -1" } : undefined}>
+            <label style={labelStyle}>{f.label}</label>
+            <input style={fieldStyle} value={(form[f.key] as string) ?? ""} onChange={set(f.key)} />
+          </div>
+        ))}
+        <div>
+          <label style={labelStyle}>Status</label>
+          <select style={fieldStyle} value={form.status ?? "discovered"} onChange={set("status")}>
+            {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Score (0-10)</label>
+          <input type="number" min={0} max={10} style={fieldStyle} value={form.score ?? 0} onChange={set("score")} />
+        </div>
+      </div>
+
+      <button onClick={handleSave} disabled={saving || !form.company_name?.trim()}
+        style={{ marginTop: 16, width: "100%", padding: "10px", background: saving ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+        {saving ? "Saving..." : lead ? "Save Changes" : "Add Lead"}
+      </button>
+    </Modal>
+  );
+}
+
+// ─── Sequence editor modal ─────────────────────────────────
+function SequenceEditorModal({ leadId, companyName, onClose, onSave }: { leadId: number; companyName: string; onClose: () => void; onSave: () => Promise<void> }) {
+  const [emails, setEmails] = useState<PendingEmail[]>([
+    { touch_number: 1, subject: "", body: "" },
+    { touch_number: 2, subject: "", body: "" },
+    { touch_number: 3, subject: "", body: "" },
+  ]);
+  const [linkedinMessage, setLinkedinMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/marketing/leads/${leadId}`);
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.emails?.length) {
+          const byTouch: Record<number, PendingEmail> = {};
+          for (const e of data.emails) byTouch[e.touch_number] = { touch_number: e.touch_number, subject: e.subject ?? "", body: e.body ?? "" };
+          setEmails([1, 2, 3].map(n => byTouch[n] ?? { touch_number: n, subject: "", body: "" }));
+        }
+        if (data.linkedin_message?.message) setLinkedinMessage(data.linkedin_message.message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [leadId]);
+
+  const updateEmail = (idx: number, field: "subject" | "body", value: string) => {
+    setEmails(es => es.map((e, i) => i === idx ? { ...e, [field]: value } : e));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`/api/marketing/leads/${leadId}/sequence`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emails, linkedin_message: linkedinMessage }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error);
+      await onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Sequence — ${companyName}`} onClose={onClose} width={640}>
+      {loading ? (
+        <div style={{ padding: "30px 0", textAlign: "center", color: "#555", fontSize: 12 }}>Loading...</div>
+      ) : (
+        <>
+          {emails.map((e, i) => (
+            <div key={i} style={{ marginBottom: 14, padding: "12px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: "#C9A84C", marginBottom: 8 }}>Email {i + 1}</div>
+              <label style={labelStyle}>Subject</label>
+              <input style={{ ...fieldStyle, marginBottom: 8 }} value={e.subject} onChange={ev => updateEmail(i, "subject", ev.target.value)} />
+              <label style={labelStyle}>Body</label>
+              <textarea style={{ ...fieldStyle, minHeight: 100, fontFamily: "inherit", resize: "vertical" }} value={e.body} onChange={ev => updateEmail(i, "body", ev.target.value)} />
+            </div>
+          ))}
+
+          <div style={{ marginBottom: 6 }}>
+            <label style={labelStyle}>LinkedIn Connection Message</label>
+            <textarea style={{ ...fieldStyle, minHeight: 80, fontFamily: "inherit", resize: "vertical" }} value={linkedinMessage} onChange={e => setLinkedinMessage(e.target.value)} />
+          </div>
+
+          <button onClick={handleSave} disabled={saving}
+            style={{ marginTop: 10, width: "100%", padding: "10px", background: saving ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+            {saving ? "Saving..." : "Save Sequence"}
+          </button>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────
 export default function MarketingAgentDashboard() {
   const [tab, setTab] = useState("approval");
-  const [stats, setStats] = useState(MOCK_STATS);
-  const [pending, setPending] = useState(MOCK_PENDING);
-  const [leads, setLeads] = useState(MOCK_LEADS);
+  const [stats, setStats] = useState<Stats>(EMPTY_STATS);
+  const [pending, setPending] = useState<PendingSequence[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [running, setRunning] = useState(false);
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
   const [provider, setProvider] = useState("claude");
-  const [model, setModel] = useState("claude-sonnet-4-6");
+  const [tier, setTier] = useState("balanced");
   const [leadFilter, setLeadFilter] = useState("all");
-  const [useMock, setUseMock] = useState(true);
+  const [loading, setLoading] = useState(true);
+
+  // Settings tab state
+  const [settings, setSettings] = useState({
+    qualifier_min_score: "6", daily_send_limit: "50", batch_size: "10",
+    smtp_host: "", smtp_from: "",
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
+
+  // Modal state
+  const [leadModal, setLeadModal] = useState<{ mode: "add" | "edit"; lead: Lead | null } | null>(null);
+  const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string } | null>(null);
 
   const showToast = (msg: string, color: string = "#4CC98E") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 3500);
   };
 
-  const apiCall = useCallback(async (path: string, method: string = "GET", body: any = null) => {
-    if (useMock) return null;
-    const res = await fetch(`${API}${path}`, {
-      method, headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : null,
-    });
-    return res.json();
-  }, [useMock]);
+  const fetchStats = useCallback(async () => {
+    const res = await fetch("/api/marketing/stats");
+    if (res.ok) setStats(await res.json());
+  }, []);
 
-  const runPipeline = async () => {
-    setRunning(true);
-    showToast("Pipeline running: Scout → Qualify → Write...", "#C9A84C");
-    await apiCall("/api/pipeline/run", "POST");
-    setTimeout(() => { setRunning(false); showToast("Pipeline complete — sequences ready for review"); }, useMock ? 3000 : 10000);
-  };
+  const fetchLeads = useCallback(async () => {
+    const res = await fetch("/api/marketing/leads");
+    if (res.ok) setLeads((await res.json()).leads);
+  }, []);
 
-  const runSend = async () => {
-    setRunning(true);
-    await apiCall("/api/pipeline/send", "POST");
-    showToast("Send run started — approved emails dispatching via SMTP");
-    setTimeout(() => setRunning(false), 2000);
-  };
+  const fetchPending = useCallback(async () => {
+    const res = await fetch("/api/marketing/approval/pending");
+    if (res.ok) setPending((await res.json()).pending);
+  }, []);
+
+  const fetchConfig = useCallback(async () => {
+    const res = await fetch("/api/marketing/config");
+    if (!res.ok) return;
+    const { config } = await res.json();
+    if (config.llm_provider) setProvider(config.llm_provider);
+    if (config.llm_tier) setTier(config.llm_tier);
+    setSettings(s => ({
+      qualifier_min_score: config.qualifier_min_score ?? s.qualifier_min_score,
+      daily_send_limit: config.daily_send_limit ?? s.daily_send_limit,
+      batch_size: config.batch_size ?? s.batch_size,
+      smtp_host: config.smtp_host ?? s.smtp_host,
+      smtp_from: config.smtp_from ?? s.smtp_from,
+    }));
+  }, []);
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([fetchStats(), fetchLeads(), fetchPending()]);
+  }, [fetchStats, fetchLeads, fetchPending]);
+
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchConfig()]);
+      setLoading(false);
+    })();
+  }, [fetchStats, fetchLeads, fetchPending, fetchConfig]);
 
   const toggleProvider = async (p: string) => {
     setProvider(p);
-    setModel(PROVIDER_MODELS[p][1]);
-    await apiCall("/api/config/provider", "POST", { provider: p, tier: "balanced" });
-    showToast(`Switched to ${p === "claude" ? "Claude Sonnet" : "GPT-4o"}`, p === "claude" ? "#C9A84C" : "#74aa9c");
+    await fetch("/api/marketing/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ llm_provider: p, llm_tier: tier }),
+    });
+    showToast(`Switched to ${p === "claude" ? "Claude" : "OpenAI"}`, p === "claude" ? "#C9A84C" : "#74aa9c");
   };
 
-  const approveOne = (id: number) => {
-    setPending(p => p.filter(s => s.id !== id));
-    setSelected(s => { const n = new Set(s); n.delete(id); return n; });
-    apiCall("/api/approval/approve", "POST", { sequence_ids: [id] });
-    showToast("Sequence approved — queued for send");
-    setStats(s => ({ ...s, approved: s.approved + 1, drafted: Math.max(0, s.drafted - 1) }));
+  const changeTier = async (t: string) => {
+    setTier(t);
+    await fetch("/api/marketing/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ llm_provider: provider, llm_tier: t }),
+    });
   };
 
-  const rejectOne = (id: number) => {
+  const approveOne = async (id: number) => {
     setPending(p => p.filter(s => s.id !== id));
     setSelected(s => { const n = new Set(s); n.delete(id); return n; });
-    apiCall("/api/approval/reject", "POST", { sequence_ids: [id] });
+    await fetch("/api/marketing/approval/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sequence_ids: [id] }),
+    });
+    showToast("Sequence approved — ready to send");
+    await refreshAll();
+  };
+
+  const rejectOne = async (id: number) => {
+    setPending(p => p.filter(s => s.id !== id));
+    setSelected(s => { const n = new Set(s); n.delete(id); return n; });
+    await fetch("/api/marketing/approval/reject", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sequence_ids: [id] }),
+    });
     showToast("Sequence rejected", "#C94C4C");
+    await refreshAll();
   };
 
-  const approveSelected = () => {
+  const approveSelected = async () => {
     const ids = [...selected];
-    ids.forEach(id => { setPending(p => p.filter(s => s.id !== id)); });
+    setPending(p => p.filter(s => !ids.includes(s.id)));
     setSelected(new Set());
-    apiCall("/api/approval/approve", "POST", { sequence_ids: ids });
+    await fetch("/api/marketing/approval/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sequence_ids: ids }),
+    });
     showToast(`${ids.length} sequences approved`);
-    setStats(s => ({ ...s, approved: s.approved + ids.length, drafted: Math.max(0, s.drafted - ids.length) }));
+    await refreshAll();
   };
 
   const selectAll = () => {
     if (selected.size === pending.length) setSelected(new Set());
     else setSelected(new Set(pending.map(s => s.id)));
+  };
+
+  // ── Lead CRUD ──
+  const saveLead = async (payload: Partial<Lead>) => {
+    if (leadModal?.mode === "edit" && leadModal.lead) {
+      const res = await fetch(`/api/marketing/leads/${leadModal.lead.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) { showToast((await res.json()).error ?? "Failed to update lead", "#C94C4C"); return; }
+      showToast("Lead updated");
+    } else {
+      const res = await fetch("/api/marketing/leads", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) { showToast((await res.json()).error ?? "Failed to add lead", "#C94C4C"); return; }
+      showToast("Lead added");
+    }
+    setLeadModal(null);
+    await refreshAll();
+  };
+
+  const deleteLead = async (lead: Lead) => {
+    if (!confirm(`Delete ${lead.company_name}? This removes its sequence and emails too.`)) return;
+    await fetch(`/api/marketing/leads/${lead.id}`, { method: "DELETE" });
+    showToast("Lead deleted", "#C94C4C");
+    await refreshAll();
+  };
+
+  const markSent = async (lead: Lead) => {
+    const res = await fetch(`/api/marketing/leads/${lead.id}`);
+    const data = await res.json();
+    const seqId = data.sequence?.id;
+    if (!seqId) { showToast("No sequence found for this lead", "#C94C4C"); return; }
+    await fetch(`/api/marketing/sequences/${seqId}/mark-sent`, { method: "POST" });
+    showToast("Marked as sent");
+    await refreshAll();
+  };
+
+  const saveSettings = async () => {
+    setSavingSettings(true);
+    try {
+      await fetch("/api/marketing/config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      showToast("Settings saved");
+    } finally {
+      setSavingSettings(false);
+    }
   };
 
   const TABS = [
@@ -311,6 +584,19 @@ export default function MarketingAgentDashboard() {
         <div style={{ position: "fixed", top: 20, right: 20, zIndex: 999, background: "#1a1d24", border: `1px solid ${toast.color}44`, borderRadius: 8, padding: "10px 16px", fontSize: 13, color: toast.color, boxShadow: `0 4px 20px rgba(0,0,0,0.4)`, transition: "all 0.3s" }}>
           {toast.msg}
         </div>
+      )}
+
+      {/* Modals */}
+      {leadModal && (
+        <LeadModal lead={leadModal.lead} onClose={() => setLeadModal(null)} onSave={saveLead} />
+      )}
+      {sequenceModal && (
+        <SequenceEditorModal
+          leadId={sequenceModal.leadId}
+          companyName={sequenceModal.companyName}
+          onClose={() => setSequenceModal(null)}
+          onSave={async () => { setSequenceModal(null); showToast("Sequence saved — added to Approval Queue"); await refreshAll(); }}
+        />
       )}
 
       {/* Header */}
@@ -334,17 +620,12 @@ export default function MarketingAgentDashboard() {
             ))}
           </div>
 
-          <select value={model} onChange={e => setModel(e.target.value)}
+          <select value={tier} onChange={e => changeTier(e.target.value)}
             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "5px 10px", color: "#aaa", fontSize: 11, outline: "none", cursor: "pointer" }}>
-            {PROVIDER_MODELS[provider].map(m => <option key={m} value={m}>{m}</option>)}
+            {TIERS.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
 
-          <button onClick={runPipeline} disabled={running}
-            style={{ background: running ? "rgba(201,168,76,0.2)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "6px 14px", color: running ? "#666" : "#0D0F14", fontSize: 12, fontWeight: 700, cursor: running ? "not-allowed" : "pointer" }}>
-            {running ? "Running..." : "⚡ Run Pipeline"}
-          </button>
-
-          <div style={{ width: 7, height: 7, borderRadius: "50%", background: running ? "#C9A84C" : "#4CC98E", boxShadow: `0 0 6px ${running ? "#C9A84C" : "#4CC98E"}` }} />
+          <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#4CC98E", boxShadow: `0 0 6px #4CC98E` }} title="Manual mode" />
         </div>
       </header>
 
@@ -379,6 +660,10 @@ export default function MarketingAgentDashboard() {
       {/* Content */}
       <div style={{ padding: "24px", maxWidth: 1100, margin: "0 auto" }}>
 
+        {loading ? (
+          <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontSize: 13 }}>Loading...</div>
+        ) : (
+        <>
         {/* ── Approval Queue ── */}
         {tab === "approval" && (
           <div>
@@ -405,7 +690,7 @@ export default function MarketingAgentDashboard() {
               <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
                 <div style={{ fontSize: 14 }}>All sequences reviewed</div>
-                <div style={{ fontSize: 12, marginTop: 6, color: "#333" }}>Run the pipeline to generate new sequences</div>
+                <div style={{ fontSize: 12, marginTop: 6, color: "#333" }}>Write a sequence for a lead to send it here for approval</div>
               </div>
             ) : (
               pending.map(seq => (
@@ -424,31 +709,40 @@ export default function MarketingAgentDashboard() {
         {tab === "pipeline" && (
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Pipeline Control</h2>
-            <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>Run agents individually or trigger the full sequence.</p>
+            <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>Automated agent runs. Use manual lead entry and the sequence editor for now.</p>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
               {[
-                { label: "Full Pipeline", desc: "Scout → Qualify → Write → Await approval", action: runPipeline, color: "#C9A84C" },
-                { label: "Send Approved", desc: "Dispatch all approved sequences via SMTP", action: runSend, color: "#4CC98E" },
+                { label: "Full Pipeline", desc: "Scout → Qualify → Write → Await approval", color: "#C9A84C" },
+                { label: "Send Approved", desc: "Dispatch all approved sequences via SMTP", color: "#4CC98E" },
               ].map(a => (
-                <button key={a.label} onClick={a.action} disabled={running}
-                  style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${a.color}33`, borderRadius: 10, padding: "18px", textAlign: "left", cursor: running ? "not-allowed" : "pointer", opacity: running ? 0.5 : 1, transition: "all 0.15s" }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: a.color, marginBottom: 6 }}>{a.label}</div>
+                <div key={a.label} title="Automation ships in a future update — use manual lead entry for now"
+                  style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${a.color}33`, borderRadius: 10, padding: "18px", textAlign: "left", cursor: "not-allowed", opacity: 0.5, position: "relative" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: a.color }}>{a.label}</div>
+                    <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 3, background: "rgba(255,255,255,0.07)", color: "#888", border: "1px solid rgba(255,255,255,0.1)" }}>
+                      COMING SOON
+                    </span>
+                  </div>
                   <div style={{ fontSize: 12, color: "#666" }}>{a.desc}</div>
-                </button>
+                </div>
               ))}
             </div>
 
             <div>
               <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Recent Runs</div>
-              {stats.recent_runs.map(run => (
-                <div key={run.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 7, marginBottom: 6 }}>
-                  <Badge label={run.agent} color="#4C8EC9" />
-                  <Badge label={run.status} color={run.status === "success" ? "#4CC98E" : "#C94C4C"} />
-                  <span style={{ fontSize: 12, color: "#666" }}>{run.leads_processed} leads</span>
-                  <span style={{ fontSize: 11, color: "#444", marginLeft: "auto" }}>{run.started_at}</span>
-                </div>
-              ))}
+              {stats.recent_runs.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#444", padding: "10px 14px" }}>No runs yet</div>
+              ) : (
+                stats.recent_runs.map(run => (
+                  <div key={run.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 7, marginBottom: 6 }}>
+                    <Badge label={run.agent} color="#4C8EC9" />
+                    <Badge label={run.status} color={run.status === "success" ? "#4CC98E" : "#C94C4C"} />
+                    <span style={{ fontSize: 12, color: "#666" }}>{run.leads_processed} leads</span>
+                    <span style={{ fontSize: 11, color: "#444", marginLeft: "auto" }}>{run.started_at}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -456,23 +750,32 @@ export default function MarketingAgentDashboard() {
         {/* ── Leads ── */}
         {tab === "leads" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
               <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Lead Pipeline</h2>
-              <div style={{ display: "flex", gap: 6 }}>
-                {["all", "qualified", "drafted", "sent", "replied", "disqualified"].map(s => (
-                  <button key={s} onClick={() => setLeadFilter(s)}
-                    style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${leadFilter === s ? "rgba(201,168,76,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: leadFilter === s ? "rgba(201,168,76,0.1)" : "transparent", color: leadFilter === s ? "#C9A84C" : "#666", cursor: "pointer", textTransform: "capitalize" }}>
-                    {s}
-                  </button>
-                ))}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["all", ...STATUS_OPTIONS].map(s => (
+                    <button key={s} onClick={() => setLeadFilter(s)}
+                      style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${leadFilter === s ? "rgba(201,168,76,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: leadFilter === s ? "rgba(201,168,76,0.1)" : "transparent", color: leadFilter === s ? "#C9A84C" : "#666", cursor: "pointer", textTransform: "capitalize" }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setLeadModal({ mode: "add", lead: null })}
+                  style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  + Add Lead
+                </button>
               </div>
             </div>
 
+            {filteredLeads.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontSize: 13 }}>No leads yet. Click "+ Add Lead" to get started.</div>
+            ) : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr>
-                    {["Company", "Status", "Score", "CMMC Level", "Location", "Email"].map(h => (
+                    {["Company", "Status", "Score", "CMMC Level", "Location", "Email", "Actions"].map(h => (
                       <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -483,16 +786,39 @@ export default function MarketingAgentDashboard() {
                       <td style={{ padding: "10px 12px", color: "#ddd", fontWeight: 600 }}>{lead.company_name}</td>
                       <td style={{ padding: "10px 12px" }}><Badge label={lead.status} color={statusColor(lead.status)} /></td>
                       <td style={{ padding: "10px 12px", fontFamily: "monospace", color: scoreColor(lead.score), fontWeight: 700 }}>{lead.score}/10</td>
-                      <td style={{ padding: "10px 12px", color: "#888" }}>{lead.cmmc_level_sought}</td>
-                      <td style={{ padding: "10px 12px", color: "#666" }}>{lead.location}</td>
+                      <td style={{ padding: "10px 12px", color: "#888" }}>{lead.cmmc_level_sought || "—"}</td>
+                      <td style={{ padding: "10px 12px", color: "#666" }}>{lead.location || "—"}</td>
                       <td style={{ padding: "10px 12px", color: lead.contact_email ? "#4CC98E" : "#444", fontSize: 11 }}>
                         {lead.contact_email || "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                          <button onClick={() => setLeadModal({ mode: "edit", lead })}
+                            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 8px", color: "#888", fontSize: 11, cursor: "pointer" }}>
+                            Edit
+                          </button>
+                          <button onClick={() => setSequenceModal({ leadId: lead.id, companyName: lead.company_name })}
+                            style={{ background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 5, padding: "4px 8px", color: "#7C6AC4", fontSize: 11, cursor: "pointer" }}>
+                            Sequence
+                          </button>
+                          {lead.status === "approved" && (
+                            <button onClick={() => markSent(lead)}
+                              style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "4px 8px", color: "#4CC98E", fontSize: 11, cursor: "pointer" }}>
+                              Mark Sent
+                            </button>
+                          )}
+                          <button onClick={() => deleteLead(lead)}
+                            style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "4px 8px", color: "#C94C4C", fontSize: 11, cursor: "pointer" }}>
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         )}
 
@@ -502,27 +828,32 @@ export default function MarketingAgentDashboard() {
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Agent Configuration</h2>
             <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>Configure pipeline behavior, sending limits, and API connections.</p>
 
+            <div style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#666", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>LLM Provider / Tier</div>
+              <div style={{ fontSize: 13, color: "#C9A84C", fontFamily: "monospace" }}>{provider} / {tier}</div>
+            </div>
+
             {[
-              { label: "LLM Provider", key: "llm_provider", value: provider, type: "display" },
-              { label: "Active Model", key: "model", value: model, type: "display" },
-              { label: "Min Qualification Score", key: "qualifier_min_score", placeholder: "6", type: "input" },
-              { label: "Daily Send Limit", key: "daily_send_limit", placeholder: "50", type: "input" },
-              { label: "Approval Batch Size", key: "batch_size", placeholder: "10", type: "input" },
-              { label: "SMTP Host", key: "smtp_host", placeholder: "smtp.yourdomain.com", type: "input" },
-              { label: "Sender Email", key: "smtp_from", placeholder: "outreach@vulnaguard.com", type: "input" },
+              { label: "Min Qualification Score", key: "qualifier_min_score" as const, placeholder: "6" },
+              { label: "Daily Send Limit", key: "daily_send_limit" as const, placeholder: "50" },
+              { label: "Approval Batch Size", key: "batch_size" as const, placeholder: "10" },
+              { label: "SMTP Host", key: "smtp_host" as const, placeholder: "smtp.yourdomain.com" },
+              { label: "Sender Email", key: "smtp_from" as const, placeholder: "outreach@vulnaguard.com" },
             ].map(setting => (
               <div key={setting.key} style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 }}>
                 <div style={{ fontSize: 11, color: "#666", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>{setting.label}</div>
-                {setting.type === "display"
-                  ? <div style={{ fontSize: 13, color: "#C9A84C", fontFamily: "monospace" }}>{setting.value}</div>
-                  : <input placeholder={setting.placeholder} style={{ width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "6px 10px", color: "#ccc", fontSize: 12, outline: "none", boxSizing: "border-box" }} />
-                }
+                <input
+                  placeholder={setting.placeholder}
+                  value={settings[setting.key]}
+                  onChange={e => setSettings(s => ({ ...s, [setting.key]: e.target.value }))}
+                  style={fieldStyle}
+                />
               </div>
             ))}
 
-            <button onClick={() => showToast("Settings saved")}
-              style={{ marginTop: 8, width: "100%", padding: "10px", background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-              Save Settings
+            <button onClick={saveSettings} disabled={savingSettings}
+              style={{ marginTop: 8, width: "100%", padding: "10px", background: savingSettings ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: savingSettings ? "not-allowed" : "pointer" }}>
+              {savingSettings ? "Saving..." : "Save Settings"}
             </button>
 
             <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
@@ -530,11 +861,13 @@ export default function MarketingAgentDashboard() {
               {["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "APIFY_API_KEY", "SMTP_PASSWORD"].map(k => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                   <span style={{ fontSize: 11, fontFamily: "monospace", color: "#666" }}>{k}</span>
-                  <span style={{ fontSize: 11, color: "#4CC98E" }}>✓ set</span>
+                  <span style={{ fontSize: 11, color: "#666" }}>—</span>
                 </div>
               ))}
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 

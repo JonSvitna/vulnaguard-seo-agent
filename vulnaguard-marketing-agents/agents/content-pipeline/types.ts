@@ -43,5 +43,6 @@ export interface ContentPipelineRecord {
   youtube_desc: string;
   youtube_short: string;
   video_brief: VideoBrief;
+  video_script: string | null;
   created_at: Date;
 }
