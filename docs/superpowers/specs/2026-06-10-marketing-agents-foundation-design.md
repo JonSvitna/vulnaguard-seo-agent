@@ -96,7 +96,16 @@ CREATE TABLE IF NOT EXISTS agent_config (
 
 ## Cleanup
 
-Delete `/vulnaguard-marketing-agents/` (the Python backend) entirely — it's broken, non-functional, and fully superseded by this TypeScript port across the 4 sub-specs.
+`/vulnaguard-marketing-agents/` now also hosts the unrelated, already-functional Content Pipeline feature (`agents/content-pipeline/`, `pipeline/content-pipeline.ts`), so it can't be deleted wholesale. Delete only the broken legacy Python files, which are fully superseded by this TypeScript port across the 4 sub-specs:
+
+- `agents/copywriter.py`, `agents/qualifier.py`, `agents/scout.py`, `agents/sender.py`
+- `api/server.py`
+- `db/database.py`
+- `lib/llm.py`
+- `pipeline/orchestrator.py`
+- `requirements.txt`, `.env.example`, `README.md`
+
+This leaves `agents/content-pipeline/` and `pipeline/content-pipeline.ts` (Content Pipeline) untouched. Once sub-spec 4 (Sender) ships and nothing remains under `vulnaguard-marketing-agents/agents/` or `pipeline/` except `content-pipeline`, consider flattening/renaming the directory — out of scope for this spec.
 
 ## API Routes
 
