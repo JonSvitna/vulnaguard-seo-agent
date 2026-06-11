@@ -66,6 +66,23 @@ CREATE TABLE IF NOT EXISTS inventory (
   services     INTEGER NOT NULL DEFAULT 0,
   updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS content_pipeline_records (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  brand           VARCHAR(50)   NOT NULL DEFAULT 'vulnaguard',
+  capture_mode    VARCHAR(10)   NOT NULL CHECK (capture_mode IN ('type', 'voice', 'video')),
+  raw_input       TEXT          NOT NULL,
+  core_idea       TEXT          NOT NULL,
+  linkedin        TEXT          NOT NULL,
+  instagram       TEXT          NOT NULL,
+  facebook        TEXT          NOT NULL,
+  youtube_desc    TEXT          NOT NULL,
+  youtube_short   TEXT          NOT NULL,
+  video_brief     JSONB         NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_content_pipeline_brand ON content_pipeline_records (brand);
+CREATE INDEX IF NOT EXISTS idx_content_pipeline_created_at ON content_pipeline_records (created_at DESC);
 `
 
 export async function ensureSchema(): Promise<void> {
