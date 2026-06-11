@@ -307,17 +307,20 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
 }
 
 // ─── Sequence editor modal ─────────────────────────────────
-function SequenceEditorModal({ leadId, companyName, onClose, onSave }: { leadId: number; companyName: string; onClose: () => void; onSave: () => Promise<void> }) {
-  const [emails, setEmails] = useState<PendingEmail[]>([
-    { touch_number: 1, subject: "", body: "" },
-    { touch_number: 2, subject: "", body: "" },
-    { touch_number: 3, subject: "", body: "" },
-  ]);
-  const [linkedinMessage, setLinkedinMessage] = useState("");
-  const [loading, setLoading] = useState(true);
+function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSave }: { leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string }; onClose: () => void; onSave: () => Promise<void> }) {
+  const [emails, setEmails] = useState<PendingEmail[]>(
+    initialDraft?.emails ?? [
+      { touch_number: 1, subject: "", body: "" },
+      { touch_number: 2, subject: "", body: "" },
+      { touch_number: 3, subject: "", body: "" },
+    ]
+  );
+  const [linkedinMessage, setLinkedinMessage] = useState(initialDraft?.linkedin_message ?? "");
+  const [loading, setLoading] = useState(!initialDraft);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
+    if (initialDraft) return;
     let cancelled = false;
     (async () => {
       try {
@@ -335,7 +338,7 @@ function SequenceEditorModal({ leadId, companyName, onClose, onSave }: { leadId:
       }
     })();
     return () => { cancelled = true; };
-  }, [leadId]);
+  }, [leadId, initialDraft]);
 
   const updateEmail = (idx: number, field: "subject" | "body", value: string) => {
     setEmails(es => es.map((e, i) => i === idx ? { ...e, [field]: value } : e));
@@ -409,7 +412,8 @@ export default function MarketingAgentDashboard() {
 
   // Modal state
   const [leadModal, setLeadModal] = useState<{ mode: "add" | "edit"; lead: Lead | null } | null>(null);
-  const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string } | null>(null);
+  const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
+  const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
   const showToast = (msg: string, color: string = "#4CC98E") => {
     setToast({ msg, color });
@@ -554,6 +558,30 @@ export default function MarketingAgentDashboard() {
     await refreshAll();
   };
 
+  const runAI = async (lead: Lead) => {
+    setAiRunningId(lead.id);
+    try {
+      const res = await fetch(`/api/marketing/leads/${lead.id}/run-ai`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "AI run failed", "#C94C4C"); return; }
+
+      await refreshAll();
+
+      if (data.draft) {
+        setSequenceModal({ leadId: lead.id, companyName: data.lead.company_name, initialDraft: data.draft });
+      } else {
+        const updated: Lead = data.lead;
+        if (updated.status === "disqualified") {
+          showToast(`Disqualified (score ${updated.score}/10) — ${updated.score_reason ?? ""}`, "#C94C4C");
+        } else {
+          showToast(`Lead is now ${updated.status}`);
+        }
+      }
+    } finally {
+      setAiRunningId(null);
+    }
+  };
+
   const saveSettings = async () => {
     setSavingSettings(true);
     try {
@@ -594,6 +622,7 @@ export default function MarketingAgentDashboard() {
         <SequenceEditorModal
           leadId={sequenceModal.leadId}
           companyName={sequenceModal.companyName}
+          initialDraft={sequenceModal.initialDraft}
           onClose={() => setSequenceModal(null)}
           onSave={async () => { setSequenceModal(null); showToast("Sequence saved — added to Approval Queue"); await refreshAll(); }}
         />
@@ -797,6 +826,12 @@ export default function MarketingAgentDashboard() {
                             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 8px", color: "#888", fontSize: 11, cursor: "pointer" }}>
                             Edit
                           </button>
+                          {(lead.status === "discovered" || lead.status === "qualified") && (
+                            <button onClick={() => runAI(lead)} disabled={aiRunningId === lead.id}
+                              style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 5, padding: "4px 8px", color: "#C9A84C", fontSize: 11, cursor: aiRunningId === lead.id ? "not-allowed" : "pointer", opacity: aiRunningId === lead.id ? 0.6 : 1 }}>
+                              {aiRunningId === lead.id ? "Running..." : lead.status === "discovered" ? "Run AI" : "Draft Sequence (AI)"}
+                            </button>
+                          )}
                           <button onClick={() => setSequenceModal({ leadId: lead.id, companyName: lead.company_name })}
                             style={{ background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 5, padding: "4px 8px", color: "#7C6AC4", fontSize: 11, cursor: "pointer" }}>
                             Sequence
