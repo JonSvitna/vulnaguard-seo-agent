@@ -9,12 +9,12 @@ export async function GET(req: NextRequest) {
   const siteId = req.nextUrl.searchParams.get('siteId')
   const rows = siteId
     ? await query(
-        `SELECT id, site_id, provider, title, created_at, updated_at
+        `SELECT id, site_id, provider, title, phase, phase_status, created_at, updated_at
          FROM sessions WHERE site_id = $1 ORDER BY updated_at DESC LIMIT 50`,
         [siteId],
       )
     : await query(
-        `SELECT id, site_id, provider, title, created_at, updated_at
+        `SELECT id, site_id, provider, title, phase, phase_status, created_at, updated_at
          FROM sessions ORDER BY updated_at DESC LIMIT 50`,
       )
   return NextResponse.json({ sessions: rows })

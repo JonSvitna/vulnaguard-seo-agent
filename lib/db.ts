@@ -13,7 +13,8 @@ function buildPool(): Pool {
     throw new Error('DATABASE_URL is not set. Attach a Postgres plugin in Railway.')
   }
   const ssl =
-    process.env.PGSSLMODE === 'disable' || /\blocalhost\b|127\.0\.0\.1/.test(connectionString)
+    process.env.PGSSLMODE === 'disable' ||
+    /\blocalhost\b|127\.0\.0\.1|\.railway\.internal\b/.test(connectionString)
       ? false
       : { rejectUnauthorized: false }
   return new Pool({ connectionString, ssl, max: 5 })

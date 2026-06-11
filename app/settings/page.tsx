@@ -58,6 +58,7 @@ export default function Settings() {
   const [values, setValues] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [dbStatus, setDbStatus] = useState<{ ok: boolean; error?: string } | null>(null)
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -67,6 +68,13 @@ export default function Settings() {
       if (v) loaded[s.key] = v
     })
     setValues(loaded)
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/health/db')
+      .then(res => res.json())
+      .then(data => setDbStatus(data))
+      .catch(err => setDbStatus({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' }))
   }, [])
 
   const handleSave = () => {
@@ -112,6 +120,30 @@ export default function Settings() {
           For server-side defaults, set environment variables on{' '}
           <a href="https://railway.app" target="_blank" rel="noopener" className="text-[#C9A84C] hover:underline">Railway</a>.
         </p>
+
+        {/* DB persistence status */}
+        <div className="mb-6 bg-white/[0.03] border border-white/[0.08] rounded-xl p-5 flex items-center justify-between">
+          <div>
+            <div className="text-sm font-semibold text-white">Session Persistence (Database)</div>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {dbStatus === null
+                ? 'Checking connection…'
+                : dbStatus.ok
+                  ? 'Connected — sessions and scan results are saved.'
+                  : `Connection failed — sessions will not be saved. ${dbStatus.error ?? ''}`}
+            </p>
+          </div>
+          <span
+            className="text-[10px] font-bold px-2 py-1 rounded shrink-0 ml-4"
+            style={{
+              color: dbStatus === null ? '#666' : dbStatus.ok ? '#4CC98E' : '#C94C4C',
+              background: dbStatus === null ? 'rgba(255,255,255,0.05)' : dbStatus.ok ? 'rgba(76,201,142,0.1)' : 'rgba(201,76,76,0.1)',
+              border: `1px solid ${dbStatus === null ? 'rgba(255,255,255,0.1)' : dbStatus.ok ? 'rgba(76,201,142,0.3)' : 'rgba(201,76,76,0.3)'}`,
+            }}
+          >
+            {dbStatus === null ? 'CHECKING' : dbStatus.ok ? 'CONNECTED' : 'ERROR'}
+          </span>
+        </div>
 
         <div className="space-y-5">
           {SETTINGS.map(s => (

@@ -16,6 +16,18 @@ const MODULES = [
 interface Message { role: 'user' | 'assistant'; content: string }
 interface PendingFile { path: string; content: string }
 interface SessionResult { kind: string; path?: string; content: string; status?: string }
+interface SessionSummary {
+  id: string
+  title: string | null
+  phase: string | null
+  phase_status: string | null
+  updated_at: string
+}
+interface SessionDetail {
+  session?: { phase?: string; phase_status?: string }
+  messages?: Array<{ role: 'user' | 'assistant'; content: string }>
+  results?: SessionResult[]
+}
 
 const PROVIDERS = [
   { id: 'anthropic', label: 'Claude (Anthropic)' },
@@ -33,6 +45,18 @@ interface PhaseState {
 function extractPhaseMarker(text: string): { phase: string; status: string } | null {
   const match = text.match(/<!-- PHASE:(\w+):(\w+) -->/)
   return match ? { phase: match[1], status: match[2] } : null
+}
+
+// Helper: format an ISO timestamp as a short relative time
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime()
+  const minutes = Math.floor(diffMs / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  return `${days}d ago`
 }
 
 // Helper: determine next module after approval
@@ -67,6 +91,8 @@ export default function Dashboard() {
   const [blogs, setBlogs] = useState(0)
   const [services, setServices] = useState(0)
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [sessionList, setSessionList] = useState<SessionSummary[]>([])
+  const [persistenceError, setPersistenceError] = useState<string | null>(null)
   const conversationRef = useRef<Message[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef<string | null>(null)
@@ -105,6 +131,114 @@ export default function Dashboard() {
     }
   }, [])
 
+  // Apply a fetched session's messages/results/phase into the UI state.
+  const applySessionDetail = useCallback((detail: SessionDetail, id: string, site: SiteConfig) => {
+    const restored: Message[] = (detail.messages ?? []).map(m => ({ role: m.role, content: m.content }))
+    const allResults: SessionResult[] = detail.results ?? []
+    const pushedPaths = new Set(
+      allResults
+        .filter(r => r.kind === 'deploy' && r.status === 'pushed' && r.path)
+        .map(r => r.path as string),
+    )
+    const discardedPaths = new Set(
+      allResults
+        .filter(r => r.kind === 'file' && r.status === 'discarded' && r.path)
+        .map(r => r.path as string),
+    )
+    const latestFileByPath = new Map<string, PendingFile>()
+    for (const r of allResults) {
+      if (r.kind === 'file' && r.path && typeof r.content === 'string') {
+        latestFileByPath.set(r.path, { path: r.path, content: r.content })
+      }
+    }
+    const recoverable = Array.from(latestFileByPath.values()).filter(
+      f => !pushedPaths.has(f.path) && !discardedPaths.has(f.path),
+    )
+    conversationRef.current = restored
+    setSessionId(id)
+    setRecoveredFiles(recoverable)
+    setRecentResults(allResults)
+    setPendingFiles([])
+    setShowRecoveredPreview(false)
+    if (detail.session?.phase && detail.session?.phase_status) {
+      setPhaseState({
+        phase: detail.session.phase as PhaseState['phase'],
+        status: detail.session.phase_status as PhaseState['status'],
+      })
+    } else {
+      setPhaseState({ phase: null, status: null })
+    }
+    if (restored.length > 0) {
+      setMessages(restored)
+    } else if (allResults.length > 0) {
+      setMessages([{
+        role: 'assistant',
+        content: `Restored prior session for ${site.domain}.\n\nRecovered results: ${allResults.length} entries. Use the recovered files banner to re-queue deployable files.`,
+      }])
+    } else {
+      setMessages([{
+        role: 'assistant',
+        content: `**Vulnaguard SEO Agent ready.**\n\nActive site: \`${site.domain}\`\n\nSelect a module or type a command. Use **Full SEO Pass** to run M1→M2→M3 in sequence.\n\nAll approved changes push directly to GitHub → auto-deploy on Vercel.`,
+      }])
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(getSessionStorageKey(site.id), id)
+    }
+  }, [])
+
+  const refreshSessionList = useCallback(async (site: SiteConfig) => {
+    try {
+      const res = await fetch(`/api/sessions?siteId=${encodeURIComponent(site.id)}`)
+      if (!res.ok) return null
+      const data = await res.json()
+      const sessions: SessionSummary[] = data.sessions ?? []
+      setSessionList(sessions)
+      return sessions
+    } catch {
+      return null
+    }
+  }, [])
+
+  // Explicitly load a past session (from the history panel).
+  const loadSession = useCallback(async (id: string) => {
+    try {
+      const res = await fetch(`/api/sessions/${id}`)
+      if (!res.ok) {
+        setPersistenceError(`Failed to load session (${res.status})`)
+        return
+      }
+      const detail: SessionDetail = await res.json()
+      applySessionDetail(detail, id, activeSite)
+      setPersistenceError(null)
+    } catch (err) {
+      setPersistenceError(err instanceof Error ? err.message : 'Failed to load session')
+    }
+  }, [activeSite, applySessionDetail])
+
+  const deleteSession = useCallback(async (id: string) => {
+    if (typeof window !== 'undefined' && !window.confirm('Delete this session? This cannot be undone.')) return
+    try {
+      const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        setPersistenceError(`Failed to delete session (${res.status})`)
+        return
+      }
+    } catch (err) {
+      setPersistenceError(err instanceof Error ? err.message : 'Failed to delete session')
+      return
+    }
+    setPersistenceError(null)
+    const remaining = sessionList.filter(s => s.id !== id)
+    setSessionList(remaining)
+    if (id === sessionIdRef.current) {
+      if (remaining.length > 0) {
+        await loadSession(remaining[0].id)
+      } else {
+        clearSession()
+      }
+    }
+  }, [sessionList, loadSession])
+
   // Load resumable session + inventory baseline whenever the active site changes.
   useEffect(() => {
     let cancelled = false
@@ -112,10 +246,14 @@ export default function Dashboard() {
       try {
         const sessRes = await fetch(`/api/sessions?siteId=${encodeURIComponent(activeSite.id)}`)
         if (cancelled) return
+        if (!sessRes.ok) {
+          setPersistenceError(`Failed to load sessions (${sessRes.status})`)
+        }
         const sessJson = sessRes.ok ? await sessRes.json() : { sessions: [] }
         await refreshInventoryBaseline(activeSite)
         if (cancelled) return
-        const sessions: Array<{ id: string }> = sessJson.sessions ?? []
+        const sessions: SessionSummary[] = sessJson.sessions ?? []
+        setSessionList(sessions)
         const preferredId = typeof window !== 'undefined' ? localStorage.getItem(getSessionStorageKey(activeSite.id)) : null
 
         const pickOrder = [
@@ -123,7 +261,7 @@ export default function Dashboard() {
           ...sessions.map(s => s.id).filter(id => id !== preferredId),
         ].slice(0, 10)
 
-        let selectedDetail: { session?: { phase?: string; phase_status?: string }; messages?: Array<{ role: 'user' | 'assistant'; content: string }>; results?: SessionResult[]; id?: string } | null = null
+        let selectedDetail: SessionDetail | null = null
         let selectedId: string | null = null
 
         for (const sid of pickOrder) {
@@ -140,52 +278,7 @@ export default function Dashboard() {
         }
 
         if (selectedDetail && selectedId && !cancelled) {
-            const restored: Message[] = (selectedDetail.messages ?? []).map((m: { role: 'user' | 'assistant'; content: string }) => ({ role: m.role, content: m.content }))
-            const allResults: SessionResult[] = selectedDetail.results ?? []
-            const pushedPaths = new Set(
-              allResults
-                .filter(r => r.kind === 'deploy' && r.status === 'pushed' && r.path)
-                .map(r => r.path as string),
-            )
-            const discardedPaths = new Set(
-              allResults
-                .filter(r => r.kind === 'file' && r.status === 'discarded' && r.path)
-                .map(r => r.path as string),
-            )
-            const latestFileByPath = new Map<string, PendingFile>()
-            for (const r of allResults) {
-              if (r.kind === 'file' && r.path && typeof r.content === 'string') {
-                latestFileByPath.set(r.path, { path: r.path, content: r.content })
-              }
-            }
-            const recoverable = Array.from(latestFileByPath.values()).filter(
-              f => !pushedPaths.has(f.path) && !discardedPaths.has(f.path),
-            )
-            conversationRef.current = restored
-            setSessionId(selectedId)
-            setRecoveredFiles(recoverable)
-            setRecentResults(allResults)
-            setPendingFiles([])
-            setShowRecoveredPreview(false)
-            if (selectedDetail.session?.phase && selectedDetail.session?.phase_status) {
-              setPhaseState({
-                phase: selectedDetail.session.phase as PhaseState['phase'],
-                status: selectedDetail.session.phase_status as PhaseState['status'],
-              })
-            } else {
-              setPhaseState({ phase: null, status: null })
-            }
-            if (restored.length > 0) {
-              setMessages(restored)
-            } else if (allResults.length > 0) {
-              setMessages([{
-                role: 'assistant',
-                content: `Restored prior session for ${activeSite.domain}.\n\nRecovered results: ${allResults.length} entries. Use the recovered files banner to re-queue deployable files.`,
-              }])
-            }
-            if (typeof window !== 'undefined') {
-              localStorage.setItem(getSessionStorageKey(activeSite.id), selectedId)
-            }
+          applySessionDetail(selectedDetail, selectedId, activeSite)
         } else {
           setSessionId(null)
           conversationRef.current = []
@@ -195,10 +288,13 @@ export default function Dashboard() {
           setShowRecoveredPreview(false)
           setPhaseState({ phase: null, status: null })
         }
-      } catch { /* persistence is best-effort */ }
+        if (sessRes.ok) setPersistenceError(null)
+      } catch (err) {
+        if (!cancelled) setPersistenceError(err instanceof Error ? err.message : 'Persistence unavailable')
+      }
     })()
     return () => { cancelled = true }
-  }, [activeSite, refreshInventoryBaseline])
+  }, [activeSite, refreshInventoryBaseline, applySessionDetail])
 
   const ensureSession = useCallback(async (): Promise<string | null> => {
     if (sessionIdRef.current) return sessionIdRef.current
@@ -208,26 +304,42 @@ export default function Dashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ siteId: activeSite.id, provider }),
       })
-      if (!res.ok) return null
+      if (!res.ok) {
+        setPersistenceError(`Failed to create session (${res.status})`)
+        return null
+      }
       const { id } = await res.json()
       sessionIdRef.current = id
       setSessionId(id)
       if (typeof window !== 'undefined') {
         localStorage.setItem(getSessionStorageKey(activeSite.id), id)
       }
+      setPersistenceError(null)
+      refreshSessionList(activeSite)
       return id
-    } catch { return null }
-  }, [activeSite.id, provider])
+    } catch (err) {
+      setPersistenceError(err instanceof Error ? err.message : 'Failed to create session')
+      return null
+    }
+  }, [activeSite, provider, refreshSessionList])
 
   const persistMessage = useCallback(async (sid: string, role: 'user' | 'assistant', content: string) => {
     try {
-      await fetch(`/api/sessions/${sid}/messages`, {
+      const res = await fetch(`/api/sessions/${sid}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role, content }),
       })
-    } catch { /* best-effort */ }
-  }, [])
+      if (!res.ok) {
+        setPersistenceError(`Failed to save message (${res.status})`)
+        return
+      }
+      setPersistenceError(null)
+      if (role === 'user') refreshSessionList(activeSite)
+    } catch (err) {
+      setPersistenceError(err instanceof Error ? err.message : 'Failed to save message')
+    }
+  }, [activeSite, refreshSessionList])
 
   const streamAgent = useCallback(async (userMessage: string) => {
     const { aiKey } = getStoredKeys()
@@ -294,7 +406,10 @@ export default function Dashboard() {
               phase: phaseMarker.phase,
               status: phaseMarker.status,
             }),
-          }).catch(() => {})
+          }).then(res => {
+            if (!res.ok) setPersistenceError(`Failed to save phase (${res.status})`)
+            else { setPersistenceError(null); refreshSessionList(activeSite) }
+          }).catch(err => setPersistenceError(err instanceof Error ? err.message : 'Failed to save phase'))
         }
       }
       
@@ -315,7 +430,10 @@ export default function Dashboard() {
                 kind: 'file', path: f.path, content: f.content, status: 'pending', siteId: activeSite.id,
               })),
             }),
-          }).catch(() => {})
+          }).then(res => {
+            if (!res.ok) setPersistenceError(`Failed to save results (${res.status})`)
+            else setPersistenceError(null)
+          }).catch(err => setPersistenceError(err instanceof Error ? err.message : 'Failed to save results'))
         }
       }
 
@@ -329,7 +447,7 @@ export default function Dashboard() {
       })
     }
     setLoading(false)
-  }, [activeSite, provider, ensureSession, persistMessage])
+  }, [activeSite, provider, ensureSession, persistMessage, refreshSessionList])
 
   const deployFiles = async () => {
     if (!pendingFiles.length) return
@@ -371,7 +489,10 @@ export default function Dashboard() {
               kind: 'deploy', path: f.path, content: f.content, status: 'pushed', siteId: activeSite.id,
             })),
           }),
-        }).catch(() => {})
+        }).then(res => {
+          if (!res.ok) setPersistenceError(`Failed to save deploy results (${res.status})`)
+          else setPersistenceError(null)
+        }).catch(err => setPersistenceError(err instanceof Error ? err.message : 'Failed to save deploy results'))
       }
 
       setRecentResults(prev => [
@@ -495,6 +616,14 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Persistence error banner */}
+      {persistenceError && (
+        <div className="border-b px-6 py-2 text-xs bg-[#C94C4C]/10 border-[#C94C4C]/20 text-[#C94C4C] flex items-center justify-between gap-3">
+          <span>Session persistence unavailable — your work won&apos;t be saved. ({persistenceError})</span>
+          <button onClick={() => setPersistenceError(null)} className="text-[#C94C4C]/70 hover:text-[#C94C4C] shrink-0">✕</button>
+        </div>
+      )}
+
       {/* Recovered files banner (reload-safe confirmation gate) */}
       {recoveredFiles.length > 0 && pendingFiles.length === 0 && (
         <div className="bg-[#4C8EC9]/10 border-b border-[#4C8EC9]/20 px-6 py-2">
@@ -530,7 +659,10 @@ export default function Dashboard() {
                           kind: 'file', path: f.path, content: f.content, status: 'discarded', siteId: activeSite.id,
                         })),
                       }),
-                    }).catch(() => {})
+                    }).then(res => {
+                      if (!res.ok) setPersistenceError(`Failed to save results (${res.status})`)
+                      else setPersistenceError(null)
+                    }).catch(err => setPersistenceError(err instanceof Error ? err.message : 'Failed to save results'))
                   }
                   setRecoveredFiles([])
                   setShowRecoveredPreview(false)
@@ -607,6 +739,43 @@ export default function Dashboard() {
                   <div key={`${r.kind}-${r.path ?? idx}`} className="text-[10px] text-gray-400 truncate">
                     <span className="text-gray-500">{r.kind}</span>
                     {r.path ? `: ${r.path}` : ''}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Past scans / session history */}
+          {sessionList.length > 0 && (
+            <div className="bg-white/[0.02] border border-white/[0.06] rounded-lg p-3 mb-1">
+              <p className="text-[10px] text-gray-600 uppercase tracking-widest mb-2">Past Scans</p>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {sessionList.map(s => (
+                  <div
+                    key={s.id}
+                    onClick={() => { if (s.id !== sessionId) loadSession(s.id) }}
+                    className="flex items-center gap-1 rounded px-2 py-1.5 cursor-pointer transition-colors"
+                    style={{
+                      background: s.id === sessionId ? 'rgba(201,168,76,0.08)' : 'transparent',
+                      border: `1px solid ${s.id === sessionId ? 'rgba(201,168,76,0.3)' : 'transparent'}`,
+                    }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] text-gray-300 truncate">{s.title || 'Untitled session'}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[9px] text-gray-600">{formatRelativeTime(s.updated_at)}</span>
+                        {s.phase && (
+                          <span className="text-[9px] text-[#4C8EC9] font-mono">{s.phase} · {s.phase_status}</span>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); deleteSession(s.id) }}
+                      className="text-gray-600 hover:text-[#C94C4C] text-xs shrink-0 px-1"
+                      title="Delete session"
+                    >
+                      ✕
+                    </button>
                   </div>
                 ))}
               </div>
