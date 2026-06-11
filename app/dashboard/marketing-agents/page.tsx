@@ -43,6 +43,21 @@ interface PendingSequence {
   linkedin_message: string;
 }
 
+interface QueueEmail {
+  id: number;
+  sequence_id: number;
+  lead_id: number;
+  touch_number: number;
+  subject: string | null;
+  body: string | null;
+  scheduled_at: string | null;
+  company_name: string;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_linkedin: string | null;
+  linkedin_message: string | null;
+}
+
 interface PipelineRun {
   id: number;
   agent: string;
@@ -83,6 +98,12 @@ function statusColor(status: string) {
     disqualified: "#666", rejected: "#666",
   };
   return map[status] || "#666";
+}
+
+function daysUntil(dateStr: string | null) {
+  if (!dateStr) return null;
+  const diffMs = new Date(dateStr).getTime() - Date.now();
+  return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
 const TIERS = ["fast", "balanced", "powerful"];
@@ -395,6 +416,7 @@ export default function MarketingAgentDashboard() {
   const [tab, setTab] = useState("approval");
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [pending, setPending] = useState<PendingSequence[]>([]);
+  const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[] }>({ due: [], upcoming: [] });
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
@@ -439,6 +461,11 @@ export default function MarketingAgentDashboard() {
     if (res.ok) setPending((await res.json()).pending);
   }, []);
 
+  const fetchQueue = useCallback(async () => {
+    const res = await fetch("/api/marketing/send-queue");
+    if (res.ok) setQueue(await res.json());
+  }, []);
+
   const fetchConfig = useCallback(async () => {
     const res = await fetch("/api/marketing/config");
     if (!res.ok) return;
@@ -455,16 +482,16 @@ export default function MarketingAgentDashboard() {
   }, []);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([fetchStats(), fetchLeads(), fetchPending()]);
-  }, [fetchStats, fetchLeads, fetchPending]);
+    await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue()]);
+  }, [fetchStats, fetchLeads, fetchPending, fetchQueue]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchConfig()]);
+      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchConfig()]);
       setLoading(false);
     })();
-  }, [fetchStats, fetchLeads, fetchPending, fetchConfig]);
+  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchConfig]);
 
   const toggleProvider = async (p: string) => {
     setProvider(p);
@@ -586,6 +613,19 @@ export default function MarketingAgentDashboard() {
     }
   };
 
+  const copyEmail = async (item: QueueEmail) => {
+    const text = `To: ${item.contact_email ?? "(no email on file)"}\nSubject: ${item.subject ?? ""}\n\n${item.body ?? ""}`;
+    await navigator.clipboard.writeText(text);
+    showToast("Copied to clipboard");
+  };
+
+  const markEmailSent = async (item: QueueEmail) => {
+    setQueue(q => ({ ...q, due: q.due.filter(e => e.id !== item.id) }));
+    await fetch(`/api/marketing/emails/${item.id}/mark-sent`, { method: "POST" });
+    showToast(`Touch ${item.touch_number} for ${item.company_name} marked sent`);
+    await refreshAll();
+  };
+
   const runImport = async () => {
     if (!importText.trim()) return;
     setImporting(true);
@@ -619,6 +659,7 @@ export default function MarketingAgentDashboard() {
 
   const TABS = [
     { id: "approval", label: "Approval Queue", count: pending.length },
+    { id: "queue", label: "Send Queue", count: queue.due.length },
     { id: "pipeline", label: "Pipeline", count: null },
     { id: "leads", label: "Leads", count: stats.total },
     { id: "settings", label: "Settings", count: null },
@@ -752,6 +793,90 @@ export default function MarketingAgentDashboard() {
                   onReject={rejectOne}
                 />
               ))
+            )}
+          </div>
+        )}
+
+        {/* ── Send Queue ── */}
+        {tab === "queue" && (
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Send Queue</h2>
+            <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>
+              Touches due now from approved sequences. Copy the email into your client, send it, then mark it sent.
+            </p>
+
+            {queue.due.length === 0 && queue.upcoming.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+                <div style={{ fontSize: 14 }}>Nothing due right now</div>
+                <div style={{ fontSize: 12, marginTop: 6, color: "#333" }}>Approve a sequence to schedule its touches</div>
+              </div>
+            ) : (
+              <>
+                {queue.due.length === 0 ? (
+                  <div style={{ fontSize: 12, color: "#444", padding: "10px 0 20px" }}>All caught up — nothing due right now.</div>
+                ) : (
+                  <div style={{ marginBottom: 28 }}>
+                    <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Due</div>
+                    {queue.due.map(item => (
+                      <div key={item.id} style={{ border: "1px solid rgba(76,201,142,0.3)", borderRadius: 10, background: "rgba(76,201,142,0.04)", padding: "14px 16px", marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{item.company_name}</span>
+                            <span style={{ fontSize: 10, fontFamily: "monospace", color: "#4CC98E", background: "rgba(76,201,142,0.15)", padding: "1px 6px", borderRadius: 3 }}>
+                              Touch {item.touch_number}
+                            </span>
+                            {item.contact_name && <span style={{ fontSize: 11, color: "#666" }}>{item.contact_name}</span>}
+                          </div>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button onClick={() => copyEmail(item)}
+                              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "5px 10px", color: "#888", fontSize: 11, cursor: "pointer" }}>
+                              Copy Email
+                            </button>
+                            <button onClick={() => markEmailSent(item)}
+                              style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 5, padding: "5px 10px", color: "#0D0F14", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              Mark Sent
+                            </button>
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 11, color: item.contact_email ? "#4CC98E" : "#C94C4C", marginBottom: 8 }}>
+                          {item.contact_email ? `To: ${item.contact_email}` : "No email on file — LinkedIn only"}
+                        </div>
+                        <div style={{ background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6, padding: "10px 12px" }}>
+                          <div style={{ fontSize: 12, color: "#C9A84C", marginBottom: 6, fontWeight: 600 }}>{item.subject}</div>
+                          <pre style={{ fontSize: 12, color: "#aaa", whiteSpace: "pre-wrap", margin: 0, lineHeight: 1.7, fontFamily: "inherit" }}>{item.body}</pre>
+                        </div>
+                        {item.touch_number === 1 && item.linkedin_message && (
+                          <div style={{ marginTop: 8, background: "rgba(76,142,201,0.06)", border: "1px solid rgba(76,142,201,0.2)", borderRadius: 6, padding: "10px 12px" }}>
+                            <div style={{ fontSize: 10, color: "#555", marginBottom: 6, letterSpacing: "0.1em", textTransform: "uppercase" }}>LinkedIn Connection Request</div>
+                            <p style={{ fontSize: 12, color: "#aaa", margin: 0, lineHeight: 1.7 }}>{item.linkedin_message}</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {queue.upcoming.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>Upcoming</div>
+                    {queue.upcoming.map(item => {
+                      const days = daysUntil(item.scheduled_at);
+                      return (
+                        <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 7, marginBottom: 6, opacity: 0.6 }}>
+                          <span style={{ fontSize: 13, color: "#aaa" }}>{item.company_name}</span>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.15)", padding: "1px 6px", borderRadius: 3 }}>
+                            Touch {item.touch_number}
+                          </span>
+                          <span style={{ fontSize: 11, color: "#555", marginLeft: "auto" }}>
+                            {days == null ? "Not scheduled" : days <= 0 ? "Due now" : `Due in ${days} day${days === 1 ? "" : "s"}`}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
