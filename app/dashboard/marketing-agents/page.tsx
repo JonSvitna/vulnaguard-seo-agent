@@ -415,6 +415,10 @@ export default function MarketingAgentDashboard() {
   const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
+  // Bulk import (Scout)
+  const [importText, setImportText] = useState("");
+  const [importing, setImporting] = useState(false);
+
   const showToast = (msg: string, color: string = "#4CC98E") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 3500);
@@ -582,6 +586,24 @@ export default function MarketingAgentDashboard() {
     }
   };
 
+  const runImport = async () => {
+    if (!importText.trim()) return;
+    setImporting(true);
+    try {
+      const res = await fetch("/api/marketing/scout/import", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ raw_text: importText }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Bulk import failed", "#C94C4C"); return; }
+      showToast(`Imported ${data.imported} lead${data.imported === 1 ? "" : "s"} (${data.skipped_duplicates} duplicate${data.skipped_duplicates === 1 ? "" : "s"} skipped)`);
+      setImportText("");
+      await refreshAll();
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const saveSettings = async () => {
     setSavingSettings(true);
     try {
@@ -739,6 +761,23 @@ export default function MarketingAgentDashboard() {
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Pipeline Control</h2>
             <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>Automated agent runs. Use manual lead entry and the sequence editor for now.</p>
+
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(76,142,201,0.3)", borderRadius: 10, padding: "18px", marginBottom: 24 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#4C8EC9", marginBottom: 6 }}>Bulk Import (AI)</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 10 }}>
+                Paste company listings, directory text, or notes. Claude will extract leads and add them as "discovered".
+              </div>
+              <textarea
+                value={importText}
+                onChange={e => setImportText(e.target.value)}
+                placeholder="Paste company listings, directory text, or notes here..."
+                style={{ ...fieldStyle, minHeight: 120, fontFamily: "inherit", resize: "vertical", marginBottom: 10 }}
+              />
+              <button onClick={runImport} disabled={importing || !importText.trim()}
+                style={{ background: importing || !importText.trim() ? "rgba(76,142,201,0.3)" : "linear-gradient(135deg, #4C8EC9, #2A4F7C)", border: "none", borderRadius: 6, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: importing || !importText.trim() ? "not-allowed" : "pointer" }}>
+                {importing ? "Importing..." : "Import Leads"}
+              </button>
+            </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
               {[
