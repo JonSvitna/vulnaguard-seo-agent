@@ -15,7 +15,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="flex flex-col w-52 h-screen bg-[#0D0F14] border-r border-white/[0.07] shrink-0"
+      className="flex flex-col w-52 h-full bg-[#0D0F14] border-r border-white/[0.07] shrink-0"
       style={{ viewTransitionName: "sidebar" }}
     >
       <div className="flex items-center gap-3 px-4 py-4 border-b border-white/[0.07]">
