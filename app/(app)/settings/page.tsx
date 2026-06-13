@@ -101,16 +101,9 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0D0F14] text-white font-sans">
-      <header className="flex items-center justify-between px-6 py-3 border-b border-white/[0.07] bg-black/30">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-gradient-to-br from-[#C9A84C] to-[#8B6914] flex items-center justify-center text-sm font-bold text-black">⬡</div>
-          <div>
-            <div className="text-sm font-bold tracking-wide">VULNAGUARD</div>
-            <div className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">Agent Settings</div>
-          </div>
-        </div>
-        <a href="/dashboard" className="text-xs text-gray-500 hover:text-gray-300 transition-colors">← Back to Agent</a>
+    <div className="min-h-full bg-[#0D0F14] text-white font-sans">
+      <header className="flex items-center justify-end px-6 py-3 border-b border-white/[0.07] bg-black/30">
+        <span className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">Agent Settings</span>
       </header>
 
       <div className="max-w-2xl mx-auto px-6 py-10">
