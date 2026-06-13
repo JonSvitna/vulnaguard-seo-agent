@@ -37,7 +37,7 @@ function parseJson(raw: string): unknown {
 
 export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 500,
     system: QUALIFIER_PROMPT,
     messages: [
@@ -59,7 +59,7 @@ export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> 
 
 export async function draftSequence(lead: OutreachLead): Promise<CopywriterResult> {
   const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: "claude-sonnet-4-6",
     max_tokens: 4000,
     system: COPYWRITER_PROMPT,
     messages: [
