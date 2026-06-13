@@ -156,6 +156,18 @@ CREATE TABLE IF NOT EXISTS agent_config (
   value TEXT NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+  id SERIAL PRIMARY KEY,
+  agent_name TEXT NOT NULL,
+  status TEXT NOT NULL,
+  input JSONB,
+  output JSONB,
+  error TEXT,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_agent_runs_started_at ON agent_runs (started_at DESC);
 `
 
 const AGENT_CONFIG_DEFAULTS: Record<string, string> = {
