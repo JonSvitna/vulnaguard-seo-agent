@@ -28,7 +28,7 @@ export function Sidebar() {
         </div>
       </div>
 
-      <nav className="flex flex-col gap-1 p-3 flex-1">
+      <nav aria-label="Main navigation" className="flex flex-col gap-1 p-3 flex-1">
         {NAV.map(({ href, icon, label }) => {
           const active =
             pathname === href ||
