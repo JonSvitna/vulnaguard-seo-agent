@@ -198,10 +198,11 @@ export default function Settings() {
             {[
               'Go to Google Cloud Console → Create or select a project',
               'Enable the Search Console API',
-              'Go to Credentials → Create OAuth 2.0 Client ID (Desktop app type)',
-              'Download credentials.json',
-              'Run: npx @googleapis/searchconsole oauth — this opens a browser for consent and outputs your refresh token',
-              'Paste the Client ID, Client Secret, and Refresh Token above',
+              'Go to Credentials → Create OAuth 2.0 Client ID (Web application type) — add https://developers.google.com/oauthplayground as an authorized redirect URI',
+              'Copy the Client ID and Client Secret, paste them in the fields above',
+              'Go to developers.google.com/oauthplayground → click the gear icon → check "Use your own OAuth credentials" → paste your Client ID and Secret',
+              'In the left panel, find "Webmaster Tools v2" (this is the Search Console API\'s legacy listing) — or paste https://www.googleapis.com/auth/webmasters.readonly into "Input your own scopes" at the bottom — then click Authorize APIs and sign in with the account that has access to your GSC property',
+              'Click "Exchange authorization code for tokens" and copy the Refresh token into the field above',
             ].map((step, i) => (
               <li key={i} className="flex gap-3 text-xs text-gray-400">
                 <span className="text-[#C9A84C] font-mono shrink-0">{i + 1}.</span>
