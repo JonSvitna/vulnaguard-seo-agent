@@ -668,7 +668,7 @@ export default function MarketingAgentDashboard() {
   const filteredLeads = leadFilter === "all" ? leads : leads.filter(l => l.status === leadFilter);
 
   return (
-    <div style={{ background: "#0D0F14", minHeight: "100vh", fontFamily: "'Inter', -apple-system, sans-serif", color: "#fff" }}>
+    <div style={{ background: "#0D0F14", minHeight: "100%", fontFamily: "'Inter', -apple-system, sans-serif", color: "#fff" }}>
 
       {/* Toast */}
       {toast && (
@@ -692,15 +692,7 @@ export default function MarketingAgentDashboard() {
       )}
 
       {/* Header */}
-      <header style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(0,0,0,0.3)", position: "sticky", top: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 32, height: 32, background: "linear-gradient(135deg, #C9A84C, #8B6914)", borderRadius: 6, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#0D0F14" }}>V</div>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: "0.03em" }}>VULNAGUARD</div>
-            <div style={{ fontSize: 10, color: "#C9A84C", letterSpacing: "0.15em", textTransform: "uppercase" }}>Marketing Agent Team</div>
-          </div>
-        </div>
-
+      <header style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "flex-end", background: "rgba(0,0,0,0.3)", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {/* LLM Provider Toggle */}
           <div style={{ display: "flex", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, overflow: "hidden" }}>
