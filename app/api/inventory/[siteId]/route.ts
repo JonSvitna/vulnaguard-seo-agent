@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { listRepoTreePaths } from '@/lib/github'
 
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
 
 function countInventoryFromPaths(paths: string[]) {
   const isBlog = (path: string) => /(^|\/)app\/blog\/[^/]+\/page\.(tsx|ts|jsx|js|mdx?)$/i.test(path)
