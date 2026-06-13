@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { generateVideoScript } from "@/vulnaguard-marketing-agents/agents/content-pipeline";
 import { query } from "@/lib/db";
 
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 
-
 interface PhaseCheckpoint {
   phase: 'research' | 'monitor' | 'audit' | 'execute' | 'factory' | 'images'
   status: 'pending' | 'ready' | 'approved' | 'executing'

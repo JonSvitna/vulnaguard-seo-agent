@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 
-
 interface ResultInput {
   kind: string
   path?: string | null

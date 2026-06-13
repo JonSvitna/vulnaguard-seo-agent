@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
-
 const EDITABLE_FIELDS = [
   "company_name",
   "website",

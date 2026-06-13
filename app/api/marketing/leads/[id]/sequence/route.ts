@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
-
 const STATUS_ORDER = ["discovered", "qualified", "drafted", "approved", "sent", "replied"];
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

@@ -3,7 +3,6 @@ import { query } from "@/lib/db";
 import { qualifyLead, draftSequence } from "@/vulnaguard-marketing-agents/agents/outreach";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 
-
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;

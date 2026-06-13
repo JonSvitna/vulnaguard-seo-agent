@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { listRepoTreePaths } from '@/lib/github'
 
-
 function countInventoryFromPaths(paths: string[]) {
   const isBlog = (path: string) => /(^|\/)app\/blog\/[^/]+\/page\.(tsx|ts|jsx|js|mdx?)$/i.test(path)
   const isService = (path: string) => {

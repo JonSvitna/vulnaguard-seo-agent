@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 import { query } from '@/lib/db'
 
-
 export async function GET(req: NextRequest) {
   const siteId = req.nextUrl.searchParams.get('siteId')
   const rows = siteId

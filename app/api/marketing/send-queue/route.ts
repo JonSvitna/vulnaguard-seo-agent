@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { query } from "@/lib/db";
 
-
 interface QueueRow extends Record<string, unknown> {
   id: number;
   sequence_id: number;
