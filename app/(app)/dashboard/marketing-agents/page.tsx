@@ -66,6 +66,17 @@ interface PipelineRun {
   started_at: string;
 }
 
+interface AgentRun {
+  id: number;
+  agent_name: string;
+  status: "success" | "error";
+  input: unknown;
+  output: unknown;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
 interface Stats {
   discovered: number;
   qualified: number;
@@ -411,6 +422,56 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSav
   );
 }
 
+// ─── Lead history modal ────────────────────────────────────
+function describeRun(run: AgentRun): string {
+  if (run.agent_name === "qualifier") {
+    if (run.status === "success") {
+      const output = run.output as { score?: number; score_reason?: string } | null;
+      return `Qualified — score ${output?.score ?? "?"}/10: ${output?.score_reason ?? ""}`;
+    }
+    return `Qualification failed: ${run.error ?? "Unknown error"}`;
+  }
+  if (run.agent_name === "copywriter") {
+    if (run.status === "success") {
+      const output = run.output as { emails?: unknown[] } | null;
+      return `Sequence drafted — ${output?.emails?.length ?? 0} emails + LinkedIn message`;
+    }
+    return `Draft failed: ${run.error ?? "Unknown error"}`;
+  }
+  return `${run.agent_name} ${run.status}`;
+}
+
+function LeadHistoryModal({ leadId, companyName, onClose }: { leadId: number; companyName: string; onClose: () => void }) {
+  const [runs, setRuns] = useState<AgentRun[] | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/marketing/leads/${leadId}/history`)
+      .then(res => res.json())
+      .then(data => setRuns(data.runs))
+      .catch(() => setError(true));
+  }, [leadId]);
+
+  return (
+    <Modal title={`History — ${companyName}`} onClose={onClose} width={480}>
+      {error ? (
+        <div style={{ padding: "20px 0", textAlign: "center", color: "#C94C4C", fontSize: 12 }}>Failed to load history.</div>
+      ) : runs === null ? (
+        <div style={{ padding: "20px 0", textAlign: "center", color: "#555", fontSize: 12 }}>Loading...</div>
+      ) : runs.length === 0 ? (
+        <div style={{ padding: "20px 0", textAlign: "center", color: "#555", fontSize: 12 }}>No AI activity yet for this lead.</div>
+      ) : (
+        runs.map(run => (
+          <div key={run.id} style={{ marginBottom: 10, padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+            <div style={{ fontSize: 12, color: run.status === "success" ? "#ddd" : "#C94C4C" }}>{describeRun(run)}</div>
+            <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(run.started_at).toLocaleString()}</div>
+          </div>
+        ))
+      )}
+    </Modal>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────
 export default function MarketingAgentDashboard() {
   const [tab, setTab] = useState("approval");
@@ -435,6 +496,7 @@ export default function MarketingAgentDashboard() {
   // Modal state
   const [leadModal, setLeadModal] = useState<{ mode: "add" | "edit"; lead: Lead | null } | null>(null);
   const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
+  const [historyModal, setHistoryModal] = useState<{ leadId: number; companyName: string } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
   // Bulk import (Scout)
@@ -688,6 +750,13 @@ export default function MarketingAgentDashboard() {
           initialDraft={sequenceModal.initialDraft}
           onClose={() => setSequenceModal(null)}
           onSave={async () => { setSequenceModal(null); showToast("Sequence saved — added to Approval Queue"); await refreshAll(); }}
+        />
+      )}
+      {historyModal && (
+        <LeadHistoryModal
+          leadId={historyModal.leadId}
+          companyName={historyModal.companyName}
+          onClose={() => setHistoryModal(null)}
         />
       )}
 
@@ -991,6 +1060,10 @@ export default function MarketingAgentDashboard() {
                           <button onClick={() => setSequenceModal({ leadId: lead.id, companyName: lead.company_name })}
                             style={{ background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 5, padding: "4px 8px", color: "#7C6AC4", fontSize: 11, cursor: "pointer" }}>
                             Sequence
+                          </button>
+                          <button onClick={() => setHistoryModal({ leadId: lead.id, companyName: lead.company_name })}
+                            style={{ background: "rgba(76,142,201,0.1)", border: "1px solid rgba(76,142,201,0.3)", borderRadius: 5, padding: "4px 8px", color: "#4C8EC9", fontSize: 11, cursor: "pointer" }}>
+                            History
                           </button>
                           {lead.status === "approved" && (
                             <button onClick={() => markSent(lead)}
