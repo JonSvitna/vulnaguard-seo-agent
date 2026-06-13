@@ -553,19 +553,9 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col h-screen bg-[#0D0F14] text-white font-sans">
+    <div className="flex flex-col h-full bg-[#0D0F14] text-white font-sans">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-3 border-b border-white/[0.07] bg-black/30 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-md bg-gradient-to-br from-[#C9A84C] to-[#8B6914] flex items-center justify-center text-sm font-bold text-black">
-            ⬡
-          </div>
-          <div>
-            <div className="text-sm font-bold tracking-wide">VULNAGUARD</div>
-            <div className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">SEO Intelligence Agent</div>
-          </div>
-        </div>
-
+      <header className="flex items-center justify-end px-6 py-3 border-b border-white/[0.07] bg-black/30 shrink-0">
         <div className="flex items-center gap-2">
           {/* Site selector */}
           <select
@@ -588,18 +578,6 @@ export default function Dashboard() {
           >
             {PROVIDERS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
           </select>
-
-          <a href="/dashboard/marketing-agents" className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
-            Marketing Agents
-          </a>
-
-          <a href="/content-pipeline" className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
-            Content Pipeline
-          </a>
-
-          <a href="/settings" className="bg-white/5 border border-white/10 rounded-md px-3 py-1.5 text-xs text-gray-400 hover:text-white transition-colors">
-            ⚙ Settings
-          </a>
 
           <div className={`w-2 h-2 rounded-full ${loading ? 'bg-[#C9A84C]' : 'bg-[#4CC98E]'} shadow-[0_0_6px_currentColor]`} />
         </div>
