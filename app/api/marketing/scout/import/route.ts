@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { extractLeads } from "@/vulnaguard-marketing-agents/agents/scout";
+import { qualifyAndUpdateLead } from "@/lib/marketing/qualify";
+import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +25,7 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
-    const inserted = [];
+    const inserted: OutreachLead[] = [];
     let skipped = 0;
 
     for (const lead of extracted) {
@@ -36,7 +38,7 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const rows = await query(
+      const rows = await query<OutreachLead>(
         `INSERT INTO leads (company_name, website, location, org_type, cmmc_level_sought,
            employee_count, contact_name, contact_title, contact_email, contact_linkedin,
            source, status, score)
@@ -50,17 +52,39 @@ export async function POST(req: NextRequest) {
       inserted.push(rows[0]);
     }
 
+    const qualified = await Promise.all(
+      inserted.map(async (lead) => {
+        try {
+          return await qualifyAndUpdateLead(lead);
+        } catch (err) {
+          console.error("[marketing/scout/import] qualify failed for lead", lead.id, err);
+          return lead;
+        }
+      })
+    );
+
+    const qualifiedCount = qualified.filter((l) => l.status === "qualified").length;
+    const disqualifiedCount = qualified.filter((l) => l.status === "disqualified").length;
+
     await query(
       `INSERT INTO pipeline_runs (agent, status, leads_processed, details, finished_at)
        VALUES ('scout', 'success', $1, $2, NOW())`,
-      [inserted.length, JSON.stringify({ extracted: extracted.length, imported: inserted.length, skipped_duplicates: skipped })]
+      [inserted.length, JSON.stringify({
+        extracted: extracted.length,
+        imported: inserted.length,
+        skipped_duplicates: skipped,
+        qualified: qualifiedCount,
+        disqualified: disqualifiedCount,
+      })]
     );
 
     return NextResponse.json({
       extracted: extracted.length,
       imported: inserted.length,
       skipped_duplicates: skipped,
-      leads: inserted,
+      qualified: qualifiedCount,
+      disqualified: disqualifiedCount,
+      leads: qualified,
     });
   } catch (err) {
     console.error("[marketing/scout/import]", err);

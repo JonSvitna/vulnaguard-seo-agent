@@ -636,7 +636,7 @@ export default function MarketingAgentDashboard() {
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Bulk import failed", "#C94C4C"); return; }
-      showToast(`Imported ${data.imported} lead${data.imported === 1 ? "" : "s"} (${data.skipped_duplicates} duplicate${data.skipped_duplicates === 1 ? "" : "s"} skipped)`);
+      showToast(`Imported ${data.imported} lead${data.imported === 1 ? "" : "s"} (${data.skipped_duplicates} duplicate${data.skipped_duplicates === 1 ? "" : "s"} skipped) — ${data.qualified} qualified, ${data.disqualified} disqualified`);
       setImportText("");
       await refreshAll();
     } finally {
