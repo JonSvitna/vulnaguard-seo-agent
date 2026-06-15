@@ -591,7 +591,11 @@ export default function Dashboard() {
       2: `Run M2 Ranking Monitor for ${activeSite.domain}. Pull GSC data, classify into Quick Wins, Declining, Indexing Gaps, Stable. Output full ranking opportunity report.`,
       3: `Run M3 On-Page Auditor for the homepage of ${activeSite.domain}. Score all 9 elements and output specific recommendations for every failing element.`,
       4: `Run M4 On-Page Executor. Based on audit recommendations in this session, output all approved changes as exact replacement content ready to commit. Format for Next.js with generateMetadata() and JSON-LD schema.`,
-      5: `Run M5 Page Factory for ${activeSite.domain}. Create one complete zipper pair: a fully optimized blog post + corresponding service page. Output as file blocks ready for GitHub. Check inventory first.`,
+      5: `Run M5 Page Factory for ${activeSite.domain}. Create one complete zipper pair: a fully optimized blog post + corresponding service page. Output as file blocks ready for GitHub. Check inventory first.${
+        activeSite.id === 'vulnaguard'
+          ? ' For vulnaguard, also include or update app/blog/page.tsx so /blog auto-discovers posts from app/blog/*/page.tsx and renders a public blog index.'
+          : ''
+      }`,
       6: `Run M6 Pexels Images for the most recent page created in this session. Determine image count by post length, generate search queries, output complete <img> tags with alt text and attribution line.`,
     }
     const mod = MODULES[moduleId - 1]

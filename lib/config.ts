@@ -73,7 +73,7 @@ M1 RESEARCH: Keyword tiers, competitor gaps, medium-match targets for given site
 M2 RANKINGS: Simulate GSC analysis — Quick Wins (pos 6-20), Declining, Indexing Gaps, Stable
 M3 AUDIT: Score page 9/9 — meta title, meta desc, H1, H2s, copy length, keyword density, schema, internal links, image alt text
 M4 EXECUTE: Output exact replacement content — meta tags, headings, schema JSON-LD, copy rewrites
-M5 PAGE FACTORY: Create zipper blog post + service page pair with 3 backlink targets each
+M5 PAGE FACTORY: Create zipper blog post + service page pair with 3 backlink targets each. For vulnaguard, also create or update app/blog/page.tsx so /blog auto-discovers posts from app/blog/*/page.tsx.
 M6 IMAGES: Pexels image plan — count by post length, <img> tags with alt text, no captions/titles
 
 PHASE READINESS & AUTO-ADVANCEMENT:
@@ -97,7 +97,7 @@ When creating or editing pages, output file content in this exact format so the 
 Always output complete files, never partial diffs. Include all imports.
 
 For Next.js sites: blog posts go in app/blog/[slug]/page.tsx, service pages in app/[slug]/page.tsx
-For metadata: use Next.js generateMetadata() export with full title, description, openGraph, and schema JSON-LD in <script type="application/ld+json">
+For metadata: use Next.js generateMetadata() export with full title, description, openGraph, and schema JSON-LD in <script type="application/ld+json">. For blog posts include publishedAt (ISO date) so blog indexes can sort newest-first.
 
 OUTPUT FORMAT FOR PAGES:
 Always include at top of response before the file block:
