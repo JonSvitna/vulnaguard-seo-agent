@@ -31,7 +31,7 @@ interface SessionDetail {
 
 const PROVIDERS = [
   { id: 'anthropic', label: 'Claude (Anthropic)' },
-  { id: 'openai', label: 'GPT-4o (OpenAI)' },
+  { id: 'openai', label: 'GPT-4.1 (OpenAI)' },
 ] as const
 
 type Provider = typeof PROVIDERS[number]['id']
