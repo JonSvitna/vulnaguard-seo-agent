@@ -83,6 +83,16 @@ export function parseFileBlocks(text: string): Array<{ path: string; content: st
   return files
 }
 
+// Replace ```file:path``` blocks with a short placeholder, so older turns in a
+// conversation don't keep re-billing the model for code it already generated.
+export function trimFileBlocks(text: string): string {
+  const regex = /```file:([^\n]+)\n([\s\S]*?)```/g
+  return text.replace(regex, (_match, path: string, content: string) => {
+    const words = content.trim().split(/\s+/).filter(Boolean).length
+    return `[file: ${path.trim()} — ~${words} words, generated above]`
+  })
+}
+
 export async function batchWriteRepoFiles(
   repo: string,
   files: Array<{ path: string; content: string }>,

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { SITES, SiteConfig } from '@/lib/config'
-import { parseFileBlocks } from '@/lib/github'
+import { parseFileBlocks, trimFileBlocks } from '@/lib/github'
 
 const MODULES = [
   { id: 1, code: 'M1', label: 'Research & Strategy', desc: 'Keyword tiers, competitor gaps', color: '#C9A84C' },
@@ -493,6 +493,18 @@ export default function Dashboard() {
             else setPersistenceError(null)
           }).catch(err => setPersistenceError(err instanceof Error ? err.message : 'Failed to save results'))
         }
+      }
+
+      // Collapse the previous turn's file blocks to placeholders before adding
+      // the new one, so only the most recent turn's generated files stay in
+      // the context sent to the API (the UI/DB copies stay full-fidelity).
+      const prevIdx = conversationRef.current.length - 2
+      const prev = conversationRef.current[prevIdx]
+      if (prev?.role === 'assistant' && prev.content.includes('```file:')) {
+        conversationRef.current = [
+          ...conversationRef.current.slice(0, prevIdx),
+          { ...prev, content: trimFileBlocks(prev.content) },
+        ]
       }
 
       conversationRef.current = [...conversationRef.current, { role: 'assistant', content: fullResponse }]

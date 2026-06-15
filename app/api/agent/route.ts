@@ -39,11 +39,23 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
   if (activeProvider === 'anthropic') {
     const client = new Anthropic({ apiKey: anthropicKey })
 
+    // Mark the last message before the newest user turn as a cache breakpoint,
+    // so system + prior history can be served from cache on turns 2+.
+    const cachedMessages = [...messages]
+    const breakpointIdx = cachedMessages.length - 2
+    if (breakpointIdx >= 0) {
+      const target = cachedMessages[breakpointIdx]
+      cachedMessages[breakpointIdx] = {
+        ...target,
+        content: [{ type: 'text', text: target.content, cache_control: { type: 'ephemeral' } }],
+      }
+    }
+
     const stream = await client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 16000,
       system: systemPrompt,
-      messages,
+      messages: cachedMessages,
     })
 
     const readable = new ReadableStream({
@@ -57,6 +69,14 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
           }
         }
         controller.close()
+
+        const { usage } = await stream.finalMessage()
+        console.log('[agent] usage', {
+          input_tokens: usage.input_tokens,
+          cache_creation_input_tokens: usage.cache_creation_input_tokens,
+          cache_read_input_tokens: usage.cache_read_input_tokens,
+          output_tokens: usage.output_tokens,
+        })
       },
     })
 
