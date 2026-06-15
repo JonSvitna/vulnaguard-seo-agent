@@ -44,7 +44,7 @@ interface PhaseState {
 // Helper: parse phase marker from response
 function extractPhaseMarker(text: string): { phase: string; status: string } | null {
   const match = text.match(/<!-- PHASE:(\w+):(\w+) -->/)
-  return match ? { phase: match[1], status: match[2] } : null
+  return match ? { phase: match[1].toLowerCase(), status: match[2].toLowerCase() } : null
 }
 
 // Helper: format an ISO timestamp as a short relative time
