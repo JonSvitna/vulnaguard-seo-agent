@@ -998,10 +998,8 @@ export default function Dashboard() {
                 <button
                   onClick={() => {
                     const nextModuleId = getNextModuleAfterPhase(phaseState.phase!)
-                    if (nextModuleId) {
-                      setPhaseState({ phase: null, status: null })
-                      handleModule(nextModuleId)
-                    }
+                    setPhaseState({ phase: null, status: null })
+                    if (nextModuleId) handleModule(nextModuleId)
                   }}
                   className="bg-[#4CC98E] text-black text-xs font-bold px-4 py-1.5 rounded hover:bg-[#5ed59f] transition-colors"
                 >
