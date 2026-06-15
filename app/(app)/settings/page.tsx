@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { SITES } from '@/lib/config'
 
 interface Setting { key: string; label: string; placeholder: string; help: string; link?: string }
 
@@ -59,6 +60,7 @@ export default function Settings() {
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
   const [dbStatus, setDbStatus] = useState<{ ok: boolean; error?: string } | null>(null)
+  const [githubHealth, setGithubHealth] = useState<Array<{ site: string; repo: string; ok: boolean; push?: boolean; error?: string }> | null>(null)
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -75,6 +77,16 @@ export default function Settings() {
       .then(res => res.json())
       .then(data => setDbStatus(data))
       .catch(err => setDbStatus({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' }))
+  }, [])
+
+  useEffect(() => {
+    const githubToken = localStorage.getItem('GITHUB_TOKEN') || undefined
+    fetch('/api/github/health', {
+      headers: githubToken ? { 'X-GitHub-Token': githubToken } : {},
+    })
+      .then(res => res.json())
+      .then(data => setGithubHealth(data.results))
+      .catch(() => setGithubHealth(null))
   }, [])
 
   const handleSave = () => {
@@ -136,6 +148,43 @@ export default function Settings() {
           >
             {dbStatus === null ? 'CHECKING' : dbStatus.ok ? 'CONNECTED' : 'ERROR'}
           </span>
+        </div>
+
+        {/* GitHub connection status */}
+        <div className="mb-6 bg-white/[0.03] border border-white/[0.08] rounded-xl p-5">
+          <div className="text-sm font-semibold text-white mb-3">GitHub Connections</div>
+          <div className="space-y-2">
+            {githubHealth === null ? (
+              <p className="text-xs text-gray-500">Checking connections…</p>
+            ) : (
+              githubHealth.map(result => {
+                const site = SITES.find(s => s.id === result.site)
+                const ok = result.ok && result.push
+                return (
+                  <div key={result.site} className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs text-white">{site?.name ?? result.site} <span className="text-gray-500">({result.repo})</span></div>
+                      {!ok && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {result.error ?? 'Token does not have push access to this repo.'}
+                        </p>
+                      )}
+                    </div>
+                    <span
+                      className="text-[10px] font-bold px-2 py-1 rounded shrink-0 ml-4"
+                      style={{
+                        color: ok ? '#4CC98E' : '#C94C4C',
+                        background: ok ? 'rgba(76,201,142,0.1)' : 'rgba(201,76,76,0.1)',
+                        border: `1px solid ${ok ? 'rgba(76,201,142,0.3)' : 'rgba(201,76,76,0.3)'}`,
+                      }}
+                    >
+                      {ok ? 'CONNECTED' : 'ERROR'}
+                    </span>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
 
         <div className="space-y-5">

@@ -41,7 +41,7 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
 
     const stream = await client.messages.stream({
       model: 'claude-sonnet-4-6',
-      max_tokens: 4096,
+      max_tokens: 16000,
       system: systemPrompt,
       messages,
     })
@@ -77,7 +77,7 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
     },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 4096,
+      max_tokens: 16384,
       stream: true,
       messages: [{ role: 'system', content: systemPrompt }, ...messages],
     }),

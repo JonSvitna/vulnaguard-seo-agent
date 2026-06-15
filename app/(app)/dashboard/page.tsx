@@ -347,7 +347,6 @@ export default function Dashboard() {
     setMessages(prev => [...prev, userMsg])
     conversationRef.current = [...conversationRef.current, userMsg]
     setLoading(true)
-    setPendingFiles([])
 
     const sid = await ensureSession()
     if (sid) persistMessage(sid, 'user', userMessage)
@@ -414,7 +413,11 @@ export default function Dashboard() {
       }
       
       if (files.length > 0) {
-        setPendingFiles(files)
+        setPendingFiles(prev => {
+          const merged = new Map(prev.map(f => [f.path, f]))
+          for (const f of files) merged.set(f.path, f)
+          return Array.from(merged.values())
+        })
         setRecoveredFiles([])
         setRecentResults(prev => [
           ...files.map(f => ({ kind: 'file', path: f.path, content: f.content, status: 'pending' })),
@@ -474,7 +477,6 @@ export default function Dashboard() {
       if (!res.ok || !data.success) {
         const err = data.error || `HTTP ${res.status}`
         setDeployStatus({ type: 'error', message: `Push failed — ${err}` })
-        setTimeout(() => setDeployStatus(null), 8000)
         return
       }
 
@@ -507,7 +509,6 @@ export default function Dashboard() {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       setDeployStatus({ type: 'error', message: `Push failed: ${message}` })
-      setTimeout(() => setDeployStatus(null), 8000)
     }
   }
 
@@ -586,7 +587,7 @@ export default function Dashboard() {
       {/* Deploy banner */}
       {deployStatus && (
         <div
-          className={`border-b px-6 py-2 text-xs ${
+          className={`border-b px-6 py-2 text-xs flex items-center justify-between gap-3 ${
             deployStatus.type === 'error'
               ? 'bg-[#C94C4C]/10 border-[#C94C4C]/20 text-[#C94C4C]'
               : deployStatus.type === 'success'
@@ -594,7 +595,10 @@ export default function Dashboard() {
                 : 'bg-[#C9A84C]/10 border-[#C9A84C]/20 text-[#C9A84C]'
           }`}
         >
-          {deployStatus.message}
+          <span>{deployStatus.message}</span>
+          {deployStatus.type === 'error' && (
+            <button onClick={() => setDeployStatus(null)} className="text-[#C94C4C]/70 hover:text-[#C94C4C] shrink-0">✕</button>
+          )}
         </div>
       )}
 
