@@ -59,6 +59,14 @@ function formatRelativeTime(iso: string): string {
   return `${days}d ago`
 }
 
+// Helper: short label for a collapsed message bubble
+function getMessageSummary(content: string): string {
+  const lines = content.split('\n').map(l => l.trim()).filter(Boolean)
+  const headingLine = lines.find(l => /^#{1,3}\s/.test(l))
+  const source = headingLine ? headingLine.replace(/^#{1,3}\s*/, '') : (lines[0] || '')
+  return source.length > 70 ? source.slice(0, 70) + '…' : source
+}
+
 // Helper: determine next module after approval
 function getNextModuleAfterPhase(phase: string): number | null {
   const phaseToModule: Record<string, number | null> = {
@@ -93,13 +101,31 @@ export default function Dashboard() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [sessionList, setSessionList] = useState<SessionSummary[]>([])
   const [persistenceError, setPersistenceError] = useState<string | null>(null)
+  const [collapsedMessages, setCollapsedMessages] = useState<Set<number>>(new Set())
   const conversationRef = useRef<Message[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const sessionIdRef = useRef<string | null>(null)
+  const stickToBottomRef = useRef(true)
 
   useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => {
+    if (stickToBottomRef.current) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const handleMessagesScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
+
+  const toggleCollapse = (i: number) => {
+    setCollapsedMessages(prev => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }
 
   const getStoredKeys = () => ({
     githubToken: typeof window !== 'undefined' ? localStorage.getItem('GITHUB_TOKEN') || undefined : undefined,
@@ -170,12 +196,19 @@ export default function Dashboard() {
     }
     if (restored.length > 0) {
       setMessages(restored)
+      setCollapsedMessages(new Set(
+        restored
+          .map((m, idx) => (m.role === 'assistant' && idx !== restored.length - 1 ? idx : -1))
+          .filter(idx => idx !== -1),
+      ))
     } else if (allResults.length > 0) {
+      setCollapsedMessages(new Set())
       setMessages([{
         role: 'assistant',
         content: `Restored prior session for ${site.domain}.\n\nRecovered results: ${allResults.length} entries. Use the recovered files banner to re-queue deployable files.`,
       }])
     } else {
+      setCollapsedMessages(new Set())
       setMessages([{
         role: 'assistant',
         content: `**Vulnaguard SEO Agent ready.**\n\nActive site: \`${site.domain}\`\n\nSelect a module or type a command. Use **Full SEO Pass** to run M1→M2→M3 in sequence.\n\nAll approved changes push directly to GitHub → auto-deploy on Vercel.`,
@@ -256,6 +289,20 @@ export default function Dashboard() {
         setSessionList(sessions)
         const preferredId = typeof window !== 'undefined' ? localStorage.getItem(getSessionStorageKey(activeSite.id)) : null
 
+        // User explicitly cleared the session — stay on a blank slate until they pick one from "Past Scans".
+        if (preferredId === 'none') {
+          setSessionId(null)
+          conversationRef.current = []
+          setRecoveredFiles([])
+          setRecentResults([])
+          setPendingFiles([])
+          setShowRecoveredPreview(false)
+          setPhaseState({ phase: null, status: null })
+          setCollapsedMessages(new Set())
+          if (sessRes.ok) setPersistenceError(null)
+          return
+        }
+
         const pickOrder = [
           ...(preferredId ? [preferredId] : []),
           ...sessions.map(s => s.id).filter(id => id !== preferredId),
@@ -296,13 +343,13 @@ export default function Dashboard() {
     return () => { cancelled = true }
   }, [activeSite, refreshInventoryBaseline, applySessionDetail])
 
-  const ensureSession = useCallback(async (): Promise<string | null> => {
+  const ensureSession = useCallback(async (titleHint?: string): Promise<string | null> => {
     if (sessionIdRef.current) return sessionIdRef.current
     try {
       const res = await fetch('/api/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ siteId: activeSite.id, provider }),
+        body: JSON.stringify({ siteId: activeSite.id, provider, title: titleHint ?? null }),
       })
       if (!res.ok) {
         setPersistenceError(`Failed to create session (${res.status})`)
@@ -341,19 +388,27 @@ export default function Dashboard() {
     }
   }, [activeSite, refreshSessionList])
 
-  const streamAgent = useCallback(async (userMessage: string) => {
+  const streamAgent = useCallback(async (userMessage: string, titleHint?: string) => {
     const { aiKey } = getStoredKeys()
     const userMsg: Message = { role: 'user', content: userMessage }
+    stickToBottomRef.current = true
     setMessages(prev => [...prev, userMsg])
     conversationRef.current = [...conversationRef.current, userMsg]
     setLoading(true)
 
-    const sid = await ensureSession()
+    const title = titleHint ?? (userMessage.length > 57 ? userMessage.slice(0, 57) + '…' : userMessage)
+    const sid = await ensureSession(title)
     if (sid) persistMessage(sid, 'user', userMessage)
 
     let fullResponse = ''
     const assistantMsg: Message = { role: 'assistant', content: '' }
-    setMessages(prev => [...prev, assistantMsg])
+    setMessages(prev => {
+      const collapseIdx = prev.length - 2
+      if (collapseIdx >= 0 && prev[collapseIdx].role === 'assistant') {
+        setCollapsedMessages(c => new Set(c).add(collapseIdx))
+      }
+      return [...prev, assistantMsg]
+    })
 
     try {
       const res = await fetch('/api/agent', {
@@ -527,7 +582,8 @@ export default function Dashboard() {
       5: `Run M5 Page Factory for ${activeSite.domain}. Create one complete zipper pair: a fully optimized blog post + corresponding service page. Output as file blocks ready for GitHub. Check inventory first.`,
       6: `Run M6 Pexels Images for the most recent page created in this session. Determine image count by post length, generate search queries, output complete <img> tags with alt text and attribution line.`,
     }
-    streamAgent(prompts[moduleId])
+    const mod = MODULES[moduleId - 1]
+    streamAgent(prompts[moduleId], mod ? `${mod.code}: ${mod.label}` : undefined)
   }
 
   const handleSend = () => {
@@ -536,7 +592,7 @@ export default function Dashboard() {
     setInput('')
   }
 
-  const clearSession = (site?: SiteConfig) => {
+  const clearSession = (site?: SiteConfig, persistFresh = false) => {
     const s = site ?? activeSite
     conversationRef.current = []
     sessionIdRef.current = null
@@ -548,9 +604,47 @@ export default function Dashboard() {
     setShowRecoveredPreview(false)
     setPhaseState({ phase: null, status: null })
     setActiveModule(null)
+    setCollapsedMessages(new Set())
     if (typeof window !== 'undefined') {
-      localStorage.removeItem(getSessionStorageKey(s.id))
+      if (persistFresh) {
+        localStorage.setItem(getSessionStorageKey(s.id), 'none')
+      } else {
+        localStorage.removeItem(getSessionStorageKey(s.id))
+      }
     }
+  }
+
+  const exportSession = () => {
+    const lines: string[] = []
+    lines.push(`# SEO Agent Session — ${activeSite.domain}`)
+    lines.push('')
+    lines.push(`- Site: ${activeSite.name} (${activeSite.domain})`)
+    lines.push(`- Exported: ${new Date().toISOString()}`)
+    if (sessionId) lines.push(`- Session ID: ${sessionId}`)
+    lines.push('')
+    if (recentResults.length > 0) {
+      lines.push('## Findings & Changes')
+      lines.push('')
+      for (const r of recentResults) {
+        lines.push(`- **${r.kind}**${r.path ? `: ${r.path}` : ''}${r.status ? ` (${r.status})` : ''}`)
+      }
+      lines.push('')
+    }
+    lines.push('## Transcript')
+    lines.push('')
+    for (const m of messages) {
+      lines.push(m.role === 'user' ? '### User' : '### Agent')
+      lines.push('')
+      lines.push(m.content)
+      lines.push('')
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `seo-session-${activeSite.id}-${new Date().toISOString().slice(0, 10)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -772,7 +866,7 @@ export default function Dashboard() {
           <button
             onClick={() => {
               setActiveModule(null)
-              streamAgent(`Run a Full SEO Pass for ${activeSite.domain}: M1 keyword research → M2 ranking monitor → M3 audit homepage. Present combined findings then wait for approval before M4/M5/M6.`)
+              streamAgent(`Run a Full SEO Pass for ${activeSite.domain}: M1 keyword research → M2 ranking monitor → M3 audit homepage. Present combined findings then wait for approval before M4/M5/M6.`, 'Full SEO Pass')
             }}
             disabled={loading}
             className="w-full py-2.5 text-xs font-bold text-[#C9A84C] bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-lg hover:bg-[#C9A84C]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -801,28 +895,53 @@ export default function Dashboard() {
             </button>
           ))}
 
-          <button onClick={() => clearSession()} className="mt-auto w-full py-2 text-xs text-gray-600 hover:text-gray-400 border border-white/[0.05] rounded-lg transition-colors">
-            Clear session
-          </button>
+          <div className="mt-auto flex gap-2">
+            <button
+              onClick={exportSession}
+              disabled={messages.length === 0}
+              className="flex-1 py-2 text-xs text-gray-600 hover:text-gray-400 border border-white/[0.05] rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Export
+            </button>
+            <button onClick={() => clearSession(undefined, true)} className="flex-1 py-2 text-xs text-gray-600 hover:text-gray-400 border border-white/[0.05] rounded-lg transition-colors">
+              Clear session
+            </button>
+          </div>
         </aside>
 
         {/* Chat */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
-            {messages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div
-                  className="max-w-[85%] rounded-xl px-4 py-3"
-                  style={{
-                    background: msg.role === 'user' ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.04)',
-                    border: msg.role === 'user' ? '1px solid rgba(201,168,76,0.25)' : '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  }}
-                >
-                  <MarkdownRenderer content={msg.content} />
+          <div className="flex-1 overflow-y-auto p-6 space-y-4" onScroll={handleMessagesScroll}>
+            {messages.map((msg, i) => {
+              const isCollapsed = msg.role === 'assistant' && collapsedMessages.has(i)
+              return (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className="max-w-[85%] rounded-xl px-4 py-3"
+                    style={{
+                      background: msg.role === 'user' ? 'rgba(201,168,76,0.1)' : 'rgba(255,255,255,0.04)',
+                      border: msg.role === 'user' ? '1px solid rgba(201,168,76,0.25)' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: msg.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                    }}
+                  >
+                    {msg.role === 'assistant' ? (
+                      <>
+                        <button
+                          onClick={() => toggleCollapse(i)}
+                          className="flex items-center gap-2 text-[11px] text-gray-500 hover:text-gray-300 transition-colors w-full text-left"
+                        >
+                          <span className="shrink-0">{isCollapsed ? '▸' : '▾'}</span>
+                          {isCollapsed && <span className="truncate">{getMessageSummary(msg.content)}</span>}
+                        </button>
+                        {!isCollapsed && <MarkdownRenderer content={msg.content} />}
+                      </>
+                    ) : (
+                      <MarkdownRenderer content={msg.content} />
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             {loading && (
               <div className="flex justify-start">
                 <div className="bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3">
