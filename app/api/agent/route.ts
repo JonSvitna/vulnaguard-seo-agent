@@ -97,8 +97,8 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
       Authorization: `Bearer ${openaiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4o',
-      max_tokens: 4096,
+      model: 'gpt-4.1',
+      max_tokens: 16384,
       stream: true,
       messages: [{ role: 'system', content: systemPrompt }, ...trimmedMessages],
     }),
