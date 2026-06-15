@@ -88,7 +88,8 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
     })
   }
 
-  // OpenAI
+  // OpenAI — cap history to last 6 turns to stay within free-tier TPM limits
+  const trimmedMessages = messages.slice(-6)
   const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -97,9 +98,9 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
     },
     body: JSON.stringify({
       model: 'gpt-4o',
-      max_tokens: 16384,
+      max_tokens: 4096,
       stream: true,
-      messages: [{ role: 'system', content: systemPrompt }, ...messages],
+      messages: [{ role: 'system', content: systemPrompt }, ...trimmedMessages],
     }),
   })
 
