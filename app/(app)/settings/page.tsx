@@ -55,12 +55,27 @@ const SETTINGS: Setting[] = [
   },
 ]
 
+interface AIProviderRow { agent_name: string; provider: string; model: string }
+
+const AGENT_LABELS: Record<string, string> = {
+  default: 'Global Default',
+  scout: 'Lead Extractor',
+  qualifier: 'Lead Qualifier',
+  copywriter: 'Email Copywriter',
+  'content-pipeline': 'Content Pipeline',
+}
+
+const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini']
+const CLAUDE_MODELS = ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001', 'claude-opus-4-8']
+
 export default function Settings() {
   const [values, setValues] = useState<Record<string, string>>({})
   const [saved, setSaved] = useState(false)
   const [copied, setCopied] = useState(false)
   const [dbStatus, setDbStatus] = useState<{ ok: boolean; error?: string } | null>(null)
   const [githubHealth, setGithubHealth] = useState<Array<{ site: string; repo: string; ok: boolean; push?: boolean; error?: string }> | null>(null)
+  const [aiConfig, setAiConfig] = useState<AIProviderRow[]>([])
+  const [aiSaving, setAiSaving] = useState<string | null>(null)
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -71,6 +86,38 @@ export default function Settings() {
     })
     setValues(loaded)
   }, [])
+
+  useEffect(() => {
+    fetch('/api/settings/ai-provider')
+      .then(res => res.json())
+      .then(data => {
+        const rows: AIProviderRow[] = data.configs ?? []
+        const agentNames = ['default', 'scout', 'qualifier', 'copywriter', 'content-pipeline']
+        const merged = agentNames.map(name => rows.find(r => r.agent_name === name) ?? { agent_name: name, provider: 'openai', model: 'gpt-4o' })
+        setAiConfig(merged)
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleAiProviderChange = async (agentName: string, field: 'provider' | 'model', value: string) => {
+    const updated = aiConfig.map(r => {
+      if (r.agent_name !== agentName) return r
+      const next = { ...r, [field]: value }
+      if (field === 'provider') {
+        next.model = value === 'openai' ? 'gpt-4o' : 'claude-sonnet-4-6'
+      }
+      return next
+    })
+    setAiConfig(updated)
+    setAiSaving(agentName)
+    const row = updated.find(r => r.agent_name === agentName)!
+    await fetch('/api/settings/ai-provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(row),
+    }).catch(() => {})
+    setAiSaving(null)
+  }
 
   useEffect(() => {
     fetch('/api/health/db')
@@ -231,6 +278,55 @@ export default function Settings() {
           >
             {copied ? '✓ Copied' : 'Copy .env'}
           </button>
+        </div>
+
+        {/* AI Provider */}
+        <div className="mt-10 bg-white/[0.02] border border-white/[0.06] rounded-xl p-6">
+          <h2 className="text-sm font-bold text-[#C9A84C] mb-1">AI Provider</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            OpenAI is the default. Override per agent or change the global default. Per-agent rows inherit the global default if not set.
+          </p>
+          <div className="space-y-3">
+            {aiConfig.map(row => {
+              const models = row.provider === 'openai' ? OPENAI_MODELS : CLAUDE_MODELS
+              const isDefault = row.agent_name === 'default'
+              return (
+                <div key={row.agent_name} className="flex items-center gap-3">
+                  <div className="w-36 shrink-0">
+                    <div className="text-xs font-semibold text-white">{AGENT_LABELS[row.agent_name] ?? row.agent_name}</div>
+                    {isDefault && <div className="text-[10px] text-gray-500">All agents inherit this</div>}
+                  </div>
+                  <div className="flex gap-2 flex-1">
+                    <div className="flex rounded-lg overflow-hidden border border-white/10 shrink-0">
+                      {(['openai', 'claude'] as const).map(p => (
+                        <button
+                          key={p}
+                          onClick={() => handleAiProviderChange(row.agent_name, 'provider', p)}
+                          className="px-3 py-1.5 text-[11px] font-bold transition-colors"
+                          style={{
+                            background: row.provider === p ? (p === 'openai' ? 'rgba(76,201,142,0.15)' : 'rgba(201,168,76,0.15)') : 'transparent',
+                            color: row.provider === p ? (p === 'openai' ? '#4CC98E' : '#C9A84C') : '#555',
+                          }}
+                        >
+                          {p === 'openai' ? 'OpenAI' : 'Claude'}
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      value={row.model}
+                      onChange={e => handleAiProviderChange(row.agent_name, 'model', e.target.value)}
+                      className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-gray-300 outline-none focus:border-[#C9A84C]/40"
+                    >
+                      {models.map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  {aiSaving === row.agent_name && (
+                    <span className="text-[10px] text-gray-500 shrink-0">saving…</span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         {/* GSC Setup Guide */}

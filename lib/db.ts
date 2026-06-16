@@ -168,6 +168,13 @@ CREATE TABLE IF NOT EXISTS agent_runs (
   finished_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_agent_runs_started_at ON agent_runs (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS ai_provider_config (
+  agent_name TEXT PRIMARY KEY,
+  provider   TEXT NOT NULL DEFAULT 'openai',
+  model      TEXT NOT NULL DEFAULT 'gpt-4o',
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 `
 
 const AGENT_CONFIG_DEFAULTS: Record<string, string> = {
@@ -189,6 +196,10 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS phase TEXT DEFAULT 'research'`)
       await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS phase_status TEXT DEFAULT 'pending'`)
       await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS video_script TEXT`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS persona_slug TEXT`)
+      await pool.query(
+        `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ('default', 'openai', 'gpt-4o') ON CONFLICT DO NOTHING`
+      )
       for (const [key, value] of Object.entries(AGENT_CONFIG_DEFAULTS)) {
         await pool.query(
           `INSERT INTO agent_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,

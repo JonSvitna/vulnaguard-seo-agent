@@ -1,10 +1,8 @@
-import Anthropic from "@anthropic-ai/sdk";
+import fs from 'fs';
+import path from 'path';
 import { QUALIFIER_PROMPT, COPYWRITER_PROMPT } from "./systemPrompts";
+import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import type { OutreachLead, QualifierResult, CopywriterResult } from "./types";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 function leadProfile(lead: OutreachLead): string {
   return `Company: ${lead.company_name}
@@ -19,13 +17,6 @@ Contact email: ${lead.contact_email ?? "unknown"}
 Contact LinkedIn: ${lead.contact_linkedin ?? "unknown"}`;
 }
 
-function extractText(message: Anthropic.Message): string {
-  return message.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("");
-}
-
 function parseJson(raw: string): unknown {
   const clean = raw.replace(/```json|```/g, "").trim();
   try {
@@ -35,20 +26,38 @@ function parseJson(raw: string): unknown {
   }
 }
 
-export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> {
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 500,
-    system: QUALIFIER_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Lead profile:\n\n${leadProfile(lead)}`,
-      },
-    ],
-  });
+async function callAI(agentName: string, system: string, userContent: string, maxTokens: number): Promise<string> {
+  const config = await getProviderForAgent(agentName);
 
-  const parsed = parseJson(extractText(message)) as Partial<QualifierResult>;
+  if (config.provider === 'openai') {
+    const client = makeOpenAIClient();
+    const res = await client.chat.completions.create({
+      model: config.model,
+      max_tokens: maxTokens,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: userContent },
+      ],
+    });
+    return res.choices[0]?.message?.content ?? '';
+  } else {
+    const client = makeAnthropicClient();
+    const message = await client.messages.create({
+      model: config.model,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: userContent }],
+    });
+    return message.content
+      .filter((b) => b.type === 'text')
+      .map((b) => (b as { type: 'text'; text: string }).text)
+      .join('');
+  }
+}
+
+export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> {
+  const raw = await callAI('qualifier', QUALIFIER_PROMPT, `Lead profile:\n\n${leadProfile(lead)}`, 500);
+  const parsed = parseJson(raw) as Partial<QualifierResult>;
 
   if (typeof parsed.score !== "number" || typeof parsed.score_reason !== "string") {
     throw new Error("Missing required field in AI response: score or score_reason");
@@ -57,20 +66,22 @@ export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> 
   return { score: parsed.score, score_reason: parsed.score_reason };
 }
 
-export async function draftSequence(lead: OutreachLead): Promise<CopywriterResult> {
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4000,
-    system: COPYWRITER_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`,
-      },
-    ],
-  });
+export async function draftSequence(lead: OutreachLead, personaSlug?: string | null): Promise<CopywriterResult> {
+  let systemPrompt = COPYWRITER_PROMPT;
 
-  const parsed = parseJson(extractText(message)) as Partial<CopywriterResult>;
+  if (personaSlug) {
+    const personaPath = path.join(process.cwd(), 'vulnaguard-marketing-agents', 'personas', `${personaSlug}.md`);
+    try {
+      const personaContent = fs.readFileSync(personaPath, 'utf-8');
+      systemPrompt = `## Sender Persona\n\n${personaContent}\n\n---\n\n${COPYWRITER_PROMPT}`;
+    } catch {
+      console.warn(`[outreach] persona file not found: ${personaPath}`);
+    }
+  }
+
+  const userContent = `Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
+  const raw = await callAI('copywriter', systemPrompt, userContent, 4000);
+  const parsed = parseJson(raw) as Partial<CopywriterResult>;
 
   if (!Array.isArray(parsed.emails) || parsed.emails.length !== 3) {
     throw new Error("Missing required field in AI response: emails");

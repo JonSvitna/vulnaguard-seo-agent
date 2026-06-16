@@ -19,7 +19,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
 
     if (lead.status === "qualified") {
-      const draft = await draftSequence(lead);
+      const draft = await draftSequence(lead, lead.persona_slug as string | null);
       return NextResponse.json({ lead, draft });
     }
 

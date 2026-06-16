@@ -1,34 +1,41 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { EXTRACTOR_PROMPT } from "./systemPrompts";
+import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import type { ExtractedLead } from "./types";
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
 
 export async function extractLeads(rawText: string): Promise<ExtractedLead[]> {
   if (!rawText?.trim()) {
     throw new Error("Raw text is required");
   }
 
-  const message = await anthropic.messages.create({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4000,
-    system: EXTRACTOR_PROMPT,
-    messages: [
-      {
-        role: "user",
-        content: `Raw text to extract leads from:\n\n${rawText.trim()}`,
-      },
-    ],
-  });
+  const config = await getProviderForAgent('scout');
+  let raw: string;
 
-  const raw = message.content
-    .filter((b) => b.type === "text")
-    .map((b) => (b as { type: "text"; text: string }).text)
-    .join("");
+  if (config.provider === 'openai') {
+    const client = makeOpenAIClient();
+    const res = await client.chat.completions.create({
+      model: config.model,
+      max_tokens: 4000,
+      messages: [
+        { role: 'system', content: EXTRACTOR_PROMPT },
+        { role: 'user', content: `Raw text to extract leads from:\n\n${rawText.trim()}` },
+      ],
+    });
+    raw = res.choices[0]?.message?.content ?? '';
+  } else {
+    const client = makeAnthropicClient();
+    const message = await client.messages.create({
+      model: config.model,
+      max_tokens: 4000,
+      system: EXTRACTOR_PROMPT,
+      messages: [{ role: 'user', content: `Raw text to extract leads from:\n\n${rawText.trim()}` }],
+    });
+    raw = message.content
+      .filter((b) => b.type === 'text')
+      .map((b) => (b as { type: 'text'; text: string }).text)
+      .join('');
+  }
 
-  const clean = raw.replace(/```json|```/g, "").trim();
+  const clean = raw.replace(/```json|```/g, '').trim();
 
   let parsed: { leads?: unknown };
   try {
@@ -42,7 +49,7 @@ export async function extractLeads(rawText: string): Promise<ExtractedLead[]> {
   }
 
   return (parsed.leads as Partial<ExtractedLead>[])
-    .filter((l): l is ExtractedLead => typeof l.company_name === "string" && l.company_name.trim().length > 0)
+    .filter((l): l is ExtractedLead => typeof l.company_name === 'string' && l.company_name.trim().length > 0)
     .map((l) => ({
       company_name: l.company_name,
       website: l.website ?? null,

@@ -19,6 +19,7 @@ interface Lead {
   status: string;
   score: number;
   score_reason: string | null;
+  persona_slug: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -277,9 +278,17 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
   const [form, setForm] = useState<Partial<Lead>>(lead ?? {
     company_name: "", website: "", location: "", org_type: "", cmmc_level_sought: "",
     employee_count: "", contact_name: "", contact_title: "", contact_email: "", contact_linkedin: "",
-    status: "discovered", score: 0,
+    status: "discovered", score: 0, persona_slug: null,
   });
   const [saving, setSaving] = useState(false);
+  const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
+
+  useEffect(() => {
+    fetch("/api/marketing/personas")
+      .then(r => r.json())
+      .then(d => setPersonas(d.personas ?? []))
+      .catch(() => {});
+  }, []);
 
   const set = (k: keyof Lead) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const value = k === "score" ? Number(e.target.value) : e.target.value;
@@ -327,6 +336,13 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
         <div>
           <label style={labelStyle}>Score (0-10)</label>
           <input type="number" min={0} max={10} style={fieldStyle} value={form.score ?? 0} onChange={set("score")} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={labelStyle}>Outreach Persona</label>
+          <select style={fieldStyle} value={form.persona_slug ?? ""} onChange={e => setForm(f => ({ ...f, persona_slug: e.target.value || null }))}>
+            <option value="">— None —</option>
+            {personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+          </select>
         </div>
       </div>
 
@@ -499,9 +515,67 @@ export default function MarketingAgentDashboard() {
   const [historyModal, setHistoryModal] = useState<{ leadId: number; companyName: string } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
-  // Bulk import (Scout)
+  // Bulk import (Scout — text paste)
   const [importText, setImportText] = useState("");
   const [importing, setImporting] = useState(false);
+
+  // CSV/Excel import
+  type CsvMapping = Record<string, string | null>;
+  type CsvRow = Record<string, string>;
+  const [csvMapping, setCsvMapping] = useState<CsvMapping | null>(null);
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
+  const [csvPersona, setCsvPersona] = useState<string>("");
+  const [csvPersonas, setCsvPersonas] = useState<{ slug: string; name: string }[]>([]);
+  const [csvParsing, setCsvParsing] = useState(false);
+  const [csvImporting, setCsvImporting] = useState(false);
+
+  const LEAD_FIELD_LABELS: Record<string, string> = {
+    company_name: "Company Name *", website: "Website", location: "Location",
+    org_type: "Org Type", cmmc_level_sought: "CMMC Level", employee_count: "Employee Count",
+    contact_name: "Contact Name", contact_title: "Contact Title",
+    contact_email: "Contact Email", contact_linkedin: "Contact LinkedIn",
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvParsing(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/marketing/leads/import-file", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Failed to parse file", "#C94C4C"); return; }
+      setCsvMapping(data.suggested_mapping);
+      setCsvHeaders(data.headers);
+      setCsvRows(data.all_rows);
+      const pRes = await fetch("/api/marketing/personas");
+      const pData = await pRes.json();
+      setCsvPersonas(pData.personas ?? []);
+    } finally {
+      setCsvParsing(false);
+      e.target.value = "";
+    }
+  };
+
+  const confirmCsvImport = async () => {
+    if (!csvMapping || !csvRows.length) return;
+    setCsvImporting(true);
+    try {
+      const res = await fetch("/api/marketing/leads/import-confirm", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Import failed", "#C94C4C"); return; }
+      showToast(`Imported ${data.imported} lead${data.imported === 1 ? "" : "s"} (${data.skipped_duplicates} skipped) — ${data.qualified} qualified`);
+      setCsvMapping(null); setCsvRows([]); setCsvPersona("");
+      await refreshAll();
+    } finally {
+      setCsvImporting(false);
+    }
+  };
 
   const showToast = (msg: string, color: string = "#4CC98E") => {
     setToast({ msg, color });
@@ -965,6 +1039,61 @@ export default function MarketingAgentDashboard() {
               </button>
             </div>
 
+            {/* CSV / Excel Import */}
+            <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 10, padding: "18px", marginBottom: 24 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#7C6AC4", marginBottom: 6 }}>Import CSV / Excel</div>
+              <div style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>
+                Upload a .csv, .xlsx, or .xls file. AI will suggest the column mapping — you confirm before anything is imported.
+              </div>
+
+              {!csvMapping ? (
+                <label style={{ display: "inline-block", cursor: csvParsing ? "not-allowed" : "pointer" }}>
+                  <input type="file" accept=".csv,.xlsx,.xls" style={{ display: "none" }} onChange={handleFileUpload} disabled={csvParsing} />
+                  <span style={{ display: "inline-block", background: csvParsing ? "rgba(124,106,196,0.3)" : "linear-gradient(135deg, #7C6AC4, #4A3A8C)", borderRadius: 6, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                    {csvParsing ? "Parsing file..." : "Choose File"}
+                  </span>
+                </label>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 12, color: "#aaa", marginBottom: 12 }}>
+                    Mapping {csvRows.length} rows. Adjust any columns below, then confirm.
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+                    {Object.keys(LEAD_FIELD_LABELS).map(field => (
+                      <div key={field}>
+                        <label style={{ ...labelStyle }}>{LEAD_FIELD_LABELS[field]}</label>
+                        <select
+                          style={{ ...fieldStyle, fontSize: 11 }}
+                          value={csvMapping[field] ?? ""}
+                          onChange={e => setCsvMapping(m => ({ ...m!, [field]: e.target.value || null }))}
+                        >
+                          <option value="">— skip —</option>
+                          {csvHeaders.map(h => <option key={h} value={h}>{h}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Outreach Persona (optional)</label>
+                    <select style={fieldStyle} value={csvPersona} onChange={e => setCsvPersona(e.target.value)}>
+                      <option value="">— None —</option>
+                      {csvPersonas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={confirmCsvImport} disabled={csvImporting}
+                      style={{ background: csvImporting ? "rgba(124,106,196,0.3)" : "linear-gradient(135deg, #7C6AC4, #4A3A8C)", border: "none", borderRadius: 6, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: csvImporting ? "not-allowed" : "pointer" }}>
+                      {csvImporting ? "Importing..." : `Confirm Import (${csvRows.length} rows)`}
+                    </button>
+                    <button onClick={() => { setCsvMapping(null); setCsvRows([]); setCsvPersona(""); }}
+                      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 16px", color: "#888", fontSize: 12, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
               {[
                 { label: "Full Pipeline", desc: "Scout → Qualify → Write → Await approval", color: "#C9A84C" },
@@ -1029,7 +1158,7 @@ export default function MarketingAgentDashboard() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr>
-                    {["Company", "Status", "Score", "CMMC Level", "Location", "Email", "Actions"].map(h => (
+                    {["Company", "Status", "Score", "CMMC Level", "Location", "Email", "Persona", "Actions"].map(h => (
                       <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -1044,6 +1173,13 @@ export default function MarketingAgentDashboard() {
                       <td style={{ padding: "10px 12px", color: "#666" }}>{lead.location || "—"}</td>
                       <td style={{ padding: "10px 12px", color: lead.contact_email ? "#4CC98E" : "#444", fontSize: 11 }}>
                         {lead.contact_email || "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>
+                        {lead.persona_slug ? (
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.12)", border: "1px solid rgba(124,106,196,0.25)", borderRadius: 3, padding: "2px 6px" }}>
+                            {lead.persona_slug}
+                          </span>
+                        ) : <span style={{ color: "#444", fontSize: 11 }}>—</span>}
                       </td>
                       <td style={{ padding: "10px 12px" }}>
                         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

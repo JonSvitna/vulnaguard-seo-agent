@@ -16,6 +16,7 @@ const EDITABLE_FIELDS = [
   "status",
   "score",
   "score_reason",
+  "persona_slug",
 ];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
