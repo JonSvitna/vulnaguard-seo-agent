@@ -23,11 +23,11 @@ Three related features for the marketing pipeline:
 2. File picker opens — accepts `.csv`, `.xlsx`, `.xls`
 3. File uploads via multipart form to `POST /api/marketing/leads/import-file`
 4. Server parses headers + first 3 data rows using `csv-parse` (CSV) and `xlsx` (Excel)
-5. Server sends headers + sample rows to OpenAI (`gpt-4o-mini`) to infer column→field mapping
+5. Server sends headers + sample rows to the active AI provider to infer column→field mapping — uses the same provider-detection logic as the SEO agent: OpenAI `gpt-4.1` if `OPENAI_API_KEY` is set, else Claude `claude-sonnet-4-6`
 6. Returns `{ suggested_mapping, sample_rows }` to the client
 7. Client renders a **Mapping Review screen**:
    - Each lead field has a dropdown pre-filled with the suggested column — user can override
-   - Persona selector dropdown (required before confirming)
+   - Persona selector dropdown (optional — can be assigned later per lead)
    - "Import N rows" confirm button
 8. Confirmed mapping + persona slug POST to `POST /api/marketing/leads/import-confirm`
 9. Server applies mapping row-by-row, deduplicates by `company_name`, inserts with `source = 'csv_import'`
@@ -107,8 +107,8 @@ Add `persona_slug TEXT` column to `leads` table. Stored at import time, persists
 
 ### UI
 
-- Persona selector shown on the Mapping Review screen during import (required)
-- Individual lead detail view allows re-assigning persona after import
+- Persona selector shown on the Mapping Review screen during import (optional)
+- Individual lead detail view allows assigning or re-assigning persona at any time
 
 ### Starter Personas
 
