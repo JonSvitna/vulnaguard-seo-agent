@@ -683,6 +683,9 @@ function LeadHistoryModal({ leadId, companyName, onClose }: { leadId: number; co
 
 // ─── Main Dashboard ───────────────────────────────────────
 export default function MarketingAgentDashboard() {
+  type LeadColumnKey = "company" | "status" | "score" | "cmmc" | "location" | "email" | "persona" | "actions";
+  type LeadSortKey = "company_name" | "status" | "score" | "cmmc_level_sought" | "location" | "contact_email" | "persona_slug";
+
   const [tab, setTab] = useState("approval");
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [pending, setPending] = useState<PendingSequence[]>([]);
@@ -693,6 +696,20 @@ export default function MarketingAgentDashboard() {
   const [provider, setProvider] = useState("claude");
   const [tier, setTier] = useState("balanced");
   const [leadFilter, setLeadFilter] = useState("all");
+  const [leadSearch, setLeadSearch] = useState("");
+  const [leadSelected, setLeadSelected] = useState<Set<number>>(new Set());
+  const [leadSort, setLeadSort] = useState<{ key: LeadSortKey | null; direction: "asc" | "desc" | null }>({ key: null, direction: null });
+  const [leadColWidths, setLeadColWidths] = useState<Record<LeadColumnKey, number>>({
+    company: 180,
+    status: 110,
+    score: 90,
+    cmmc: 120,
+    location: 140,
+    email: 220,
+    persona: 130,
+    actions: 320,
+  });
+  const [leadResize, setLeadResize] = useState<{ column: LeadColumnKey; startX: number; startWidth: number } | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Settings tab state
@@ -1114,6 +1131,72 @@ export default function MarketingAgentDashboard() {
 
   const filteredLeads = leadFilter === "all" ? leads : leads.filter(l => l.status === leadFilter);
 
+  const getLeadSortValue = (lead: Lead, key: LeadSortKey): string | number => {
+    if (key === "score") return lead.score;
+    if (key === "company_name") return lead.company_name?.toLowerCase() ?? "";
+    if (key === "status") return lead.status?.toLowerCase() ?? "";
+    if (key === "cmmc_level_sought") return lead.cmmc_level_sought?.toLowerCase() ?? "";
+    if (key === "location") return lead.location?.toLowerCase() ?? "";
+    if (key === "contact_email") return lead.contact_email?.toLowerCase() ?? "";
+    return lead.persona_slug?.toLowerCase() ?? "";
+  };
+
+  const cycleLeadSort = (key: LeadSortKey) => {
+    setLeadSort(prev => {
+      if (prev.key !== key) return { key, direction: "asc" };
+      if (prev.direction === "asc") return { key, direction: "desc" };
+      return { key: null, direction: null };
+    });
+  };
+
+  useEffect(() => {
+    if (!leadResize) return;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - leadResize.startX;
+      const nextWidth = Math.max(80, leadResize.startWidth + delta);
+      setLeadColWidths(prev => ({ ...prev, [leadResize.column]: nextWidth }));
+    };
+
+    const onMouseUp = () => setLeadResize(null);
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [leadResize]);
+
+  const searchedLeads = filteredLeads.filter(lead => {
+    const q = leadSearch.trim().toLowerCase();
+    if (!q) return true;
+    const haystack = [
+      lead.company_name,
+      lead.status,
+      lead.cmmc_level_sought,
+      lead.location,
+      lead.contact_email,
+      lead.persona_slug,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+
+  const visibleLeads = [...searchedLeads].sort((a, b) => {
+    if (!leadSort.key || !leadSort.direction) return 0;
+    const aVal = getLeadSortValue(a, leadSort.key);
+    const bVal = getLeadSortValue(b, leadSort.key);
+    const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+    return leadSort.direction === "asc" ? cmp : -cmp;
+  });
+
+  const allVisibleSelected = visibleLeads.length > 0 && visibleLeads.every(l => leadSelected.has(l.id));
+  const someVisibleSelected = visibleLeads.some(l => leadSelected.has(l.id));
+
   return (
     <div style={{ background: "#0D0F14", minHeight: "100%", fontFamily: "'Inter', -apple-system, sans-serif", color: "#fff" }}>
 
@@ -1507,30 +1590,125 @@ export default function MarketingAgentDashboard() {
               </div>
             </div>
 
-            {filteredLeads.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontSize: 13 }}>No leads yet. Click "+ Add Lead" to get started.</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
+              <input
+                value={leadSearch}
+                onChange={e => setLeadSearch(e.target.value)}
+                placeholder="Filter leads by company, status, location, email, persona..."
+                style={{ ...fieldStyle, maxWidth: 520 }}
+              />
+              <div style={{ fontSize: 11, color: "#666" }}>
+                {leadSelected.size} selected
+              </div>
+            </div>
+
+            {visibleLeads.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontSize: 13 }}>
+                {leads.length === 0 ? "No leads yet. Click \"+ Add Lead\" to get started." : "No leads match the current filter."}
+              </div>
             ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: 38 }} />
+                  <col style={{ width: leadColWidths.company }} />
+                  <col style={{ width: leadColWidths.status }} />
+                  <col style={{ width: leadColWidths.score }} />
+                  <col style={{ width: leadColWidths.cmmc }} />
+                  <col style={{ width: leadColWidths.location }} />
+                  <col style={{ width: leadColWidths.email }} />
+                  <col style={{ width: leadColWidths.persona }} />
+                  <col style={{ width: leadColWidths.actions }} />
+                </colgroup>
                 <thead>
                   <tr>
-                    {["Company", "Status", "Score", "CMMC Level", "Location", "Email", "Persona", "Actions"].map(h => (
-                      <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                    <th style={{ textAlign: "left", padding: "8px 6px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10 }}>
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        ref={el => { if (el) el.indeterminate = !allVisibleSelected && someVisibleSelected; }}
+                        onChange={() => {
+                          if (allVisibleSelected) {
+                            setLeadSelected(prev => {
+                              const next = new Set(prev);
+                              for (const lead of visibleLeads) next.delete(lead.id);
+                              return next;
+                            });
+                            return;
+                          }
+                          setLeadSelected(prev => {
+                            const next = new Set(prev);
+                            for (const lead of visibleLeads) next.add(lead.id);
+                            return next;
+                          });
+                        }}
+                        style={{ width: 14, height: 14, accentColor: "#C9A84C", cursor: "pointer" }}
+                      />
+                    </th>
+                    {[
+                      { id: "company" as const, label: "Company", sortKey: "company_name" as const, resizable: true },
+                      { id: "status" as const, label: "Status", sortKey: "status" as const, resizable: true },
+                      { id: "score" as const, label: "Score", sortKey: "score" as const, resizable: true },
+                      { id: "cmmc" as const, label: "CMMC Level", sortKey: "cmmc_level_sought" as const, resizable: true },
+                      { id: "location" as const, label: "Location", sortKey: "location" as const, resizable: true },
+                      { id: "email" as const, label: "Email", sortKey: "contact_email" as const, resizable: true },
+                      { id: "persona" as const, label: "Persona", sortKey: "persona_slug" as const, resizable: true },
+                      { id: "actions" as const, label: "Actions", sortKey: null, resizable: true },
+                    ].map(col => (
+                      <th key={col.id} style={{ position: "relative", textAlign: "left", padding: "8px 12px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap", userSelect: "none" }}>
+                        {col.sortKey ? (
+                          <button
+                            type="button"
+                            onClick={() => cycleLeadSort(col.sortKey)}
+                            style={{ background: "transparent", border: "none", padding: 0, color: "inherit", font: "inherit", letterSpacing: "inherit", textTransform: "inherit", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}
+                          >
+                            {col.label}
+                            <span style={{ color: leadSort.key === col.sortKey ? "#C9A84C" : "#444", fontSize: 10 }}>
+                              {leadSort.key === col.sortKey ? (leadSort.direction === "asc" ? "▲" : leadSort.direction === "desc" ? "▼" : "↕") : "↕"}
+                            </span>
+                          </button>
+                        ) : (
+                          col.label
+                        )}
+                        {col.resizable && (
+                          <span
+                            onMouseDown={(ev) => {
+                              ev.preventDefault();
+                              setLeadResize({ column: col.id, startX: ev.clientX, startWidth: leadColWidths[col.id] });
+                            }}
+                            style={{ position: "absolute", top: 0, right: 0, width: 8, height: "100%", cursor: "col-resize" }}
+                            title="Drag to resize"
+                          />
+                        )}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredLeads.map(lead => (
+                  {visibleLeads.map(lead => (
                     <tr key={lead.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                      <td style={{ padding: "10px 12px", color: "#ddd", fontWeight: 600 }}>{lead.company_name}</td>
-                      <td style={{ padding: "10px 12px" }}><Badge label={lead.status} color={statusColor(lead.status)} /></td>
-                      <td style={{ padding: "10px 12px", fontFamily: "monospace", color: scoreColor(lead.score), fontWeight: 700 }}>{lead.score}/10</td>
-                      <td style={{ padding: "10px 12px", color: "#888" }}>{lead.cmmc_level_sought || "—"}</td>
-                      <td style={{ padding: "10px 12px", color: "#666" }}>{lead.location || "—"}</td>
-                      <td style={{ padding: "10px 12px", color: lead.contact_email ? "#4CC98E" : "#444", fontSize: 11 }}>
+                      <td style={{ padding: "10px 6px" }}>
+                        <input
+                          type="checkbox"
+                          checked={leadSelected.has(lead.id)}
+                          onChange={() => setLeadSelected(prev => {
+                            const next = new Set(prev);
+                            if (next.has(lead.id)) next.delete(lead.id);
+                            else next.add(lead.id);
+                            return next;
+                          })}
+                          style={{ width: 14, height: 14, accentColor: "#C9A84C", cursor: "pointer" }}
+                        />
+                      </td>
+                      <td style={{ padding: "10px 12px", color: "#ddd", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.company_name}>{lead.company_name}</td>
+                      <td style={{ padding: "10px 12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Badge label={lead.status} color={statusColor(lead.status)} /></td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", color: scoreColor(lead.score), fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.score}/10</td>
+                      <td style={{ padding: "10px 12px", color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.cmmc_level_sought ?? "—"}>{lead.cmmc_level_sought || "—"}</td>
+                      <td style={{ padding: "10px 12px", color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.location ?? "—"}>{lead.location || "—"}</td>
+                      <td style={{ padding: "10px 12px", color: lead.contact_email ? "#4CC98E" : "#444", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.contact_email ?? "—"}>
                         {lead.contact_email || "—"}
                       </td>
-                      <td style={{ padding: "10px 12px" }}>
+                      <td style={{ padding: "10px 12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {lead.persona_slug ? (
                           <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.12)", border: "1px solid rgba(124,106,196,0.25)", borderRadius: 3, padding: "2px 6px" }}>
                             {lead.persona_slug}
