@@ -834,6 +834,9 @@ export default function MarketingAgentDashboard() {
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [sendingBatch, setSendingBatch] = useState(false);
   const [sendingEmailId, setSendingEmailId] = useState<number | null>(null);
+  const [bulkLeadStatus, setBulkLeadStatus] = useState("");
+  const [bulkLeadCategory, setBulkLeadCategory] = useState("");
+  const [bulkUpdatingLeads, setBulkUpdatingLeads] = useState(false);
 
   const runFullPipeline = async () => {
     setPipelineRunning(true);
@@ -879,6 +882,43 @@ export default function MarketingAgentDashboard() {
       await refreshAll();
     } finally {
       setSendingEmailId(null);
+    }
+  };
+
+  const updateSelectedLeads = async () => {
+    if (leadSelected.size === 0) return;
+    if (!bulkLeadStatus && !bulkLeadCategory) {
+      showToast("Choose a bulk status or category", "#C9A84C");
+      return;
+    }
+
+    setBulkUpdatingLeads(true);
+    try {
+      const res = await fetch("/api/marketing/leads/bulk-update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: [...leadSelected],
+          set_status: bulkLeadStatus || undefined,
+          set_category: bulkLeadCategory || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast(data.error ?? "Bulk update failed", "#C94C4C");
+        return;
+      }
+
+      const parts = [`Updated ${data.updated} lead${data.updated === 1 ? "" : "s"}`];
+      if (bulkLeadStatus) parts.push(`status → ${bulkLeadStatus}`);
+      if (bulkLeadCategory) parts.push(`category → ${CATEGORY_LABELS[bulkLeadCategory] ?? bulkLeadCategory}`);
+      showToast(parts.join(" · "));
+      setLeadSelected(new Set());
+      setBulkLeadStatus("");
+      setBulkLeadCategory("");
+      await refreshAll();
+    } finally {
+      setBulkUpdatingLeads(false);
     }
   };
 
@@ -1685,6 +1725,47 @@ export default function MarketingAgentDashboard() {
               </div>
             </div>
 
+            {leadSelected.size > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, background: "rgba(255,255,255,0.02)" }}>
+                <span style={{ fontSize: 11, color: "#888", fontWeight: 600 }}>{leadSelected.size} lead{leadSelected.size === 1 ? "" : "s"} selected</span>
+                <select
+                  value={bulkLeadStatus}
+                  onChange={e => setBulkLeadStatus(e.target.value)}
+                  style={{ ...fieldStyle, maxWidth: 170, paddingTop: 7, paddingBottom: 7 }}
+                >
+                  <option value="">Bulk status</option>
+                  {STATUS_OPTIONS.map(status => (
+                    <option key={status} value={status}>{status}</option>
+                  ))}
+                </select>
+                <select
+                  value={bulkLeadCategory}
+                  onChange={e => setBulkLeadCategory(e.target.value)}
+                  style={{ ...fieldStyle, maxWidth: 210, paddingTop: 7, paddingBottom: 7 }}
+                >
+                  <option value="">Bulk category</option>
+                  {CATEGORY_OPTIONS.map(category => (
+                    <option key={category} value={category}>{CATEGORY_LABELS[category]}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={updateSelectedLeads}
+                  disabled={bulkUpdatingLeads}
+                  style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "7px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: bulkUpdatingLeads ? "not-allowed" : "pointer", opacity: bulkUpdatingLeads ? 0.7 : 1 }}
+                >
+                  {bulkUpdatingLeads ? "Updating..." : "Apply to selected"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeadSelected(new Set())}
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 12px", color: "#888", fontSize: 12, cursor: "pointer" }}
+                >
+                  Clear selection
+                </button>
+              </div>
+            )}
+
             {visibleLeads.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#444", fontSize: 13 }}>
                 {leads.length === 0 ? "No leads yet. Click \"+ Add Lead\" to get started." : "No leads match the current filter."}
@@ -1781,7 +1862,15 @@ export default function MarketingAgentDashboard() {
                           style={{ width: 14, height: 14, accentColor: "#C9A84C", cursor: "pointer" }}
                         />
                       </td>
-                      <td style={{ padding: "10px 12px", color: "#ddd", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.company_name}>{lead.company_name}</td>
+                      <td style={{ padding: "10px 12px", color: "#ddd", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.company_name}>
+                        <button
+                          type="button"
+                          onClick={() => setLeadModal({ mode: "edit", lead })}
+                          style={{ background: "transparent", border: "none", padding: 0, margin: 0, color: "inherit", font: "inherit", fontWeight: 600, cursor: "pointer", textAlign: "left", width: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                        >
+                          {lead.company_name}
+                        </button>
+                      </td>
                       <td style={{ padding: "10px 12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><Badge label={lead.status} color={statusColor(lead.status)} /></td>
                       <td style={{ padding: "10px 12px", fontFamily: "monospace", color: scoreColor(lead.score), fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{lead.score}/10</td>
                       <td style={{ padding: "10px 12px", color: "#888", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={lead.cmmc_level_sought ?? "—"}>{lead.cmmc_level_sought || "—"}</td>
@@ -1797,39 +1886,39 @@ export default function MarketingAgentDashboard() {
                         ) : <span style={{ color: "#444", fontSize: 11 }}>—</span>}
                       </td>
                       <td style={{ padding: "10px 12px" }}>
-                        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 6, flexWrap: "nowrap", overflowX: "auto", whiteSpace: "nowrap", alignItems: "center" }}>
                           <button onClick={() => setLeadModal({ mode: "edit", lead })}
-                            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 8px", color: "#888", fontSize: 11, cursor: "pointer" }}>
+                            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "3px 7px", color: "#888", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                             Edit
                           </button>
                           {lead.status === "disqualified" && (
                             <button onClick={() => requalifyLead(lead)}
-                              style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "4px 8px", color: "#4CC98E", fontSize: 11, cursor: "pointer" }}>
+                              style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "3px 7px", color: "#4CC98E", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                               Requalify
                             </button>
                           )}
                           {(lead.status === "discovered" || lead.status === "qualified" || lead.status === "disqualified") && (
                             <button onClick={() => runAI(lead)} disabled={aiRunningId === lead.id}
-                              style={{ background: lead.status === "disqualified" ? "rgba(201,76,76,0.1)" : "rgba(201,168,76,0.1)", border: `1px solid ${lead.status === "disqualified" ? "rgba(201,76,76,0.3)" : "rgba(201,168,76,0.3)"}`, borderRadius: 5, padding: "4px 8px", color: lead.status === "disqualified" ? "#C94C4C" : "#C9A84C", fontSize: 11, cursor: aiRunningId === lead.id ? "not-allowed" : "pointer", opacity: aiRunningId === lead.id ? 0.6 : 1 }}>
+                              style={{ background: lead.status === "disqualified" ? "rgba(201,76,76,0.1)" : "rgba(201,168,76,0.1)", border: `1px solid ${lead.status === "disqualified" ? "rgba(201,76,76,0.3)" : "rgba(201,168,76,0.3)"}`, borderRadius: 5, padding: "3px 7px", color: lead.status === "disqualified" ? "#C94C4C" : "#C9A84C", fontSize: 10, cursor: aiRunningId === lead.id ? "not-allowed" : "pointer", opacity: aiRunningId === lead.id ? 0.6 : 1, flexShrink: 0 }}>
                               {aiRunningId === lead.id ? "Running..." : lead.status === "discovered" ? "Run AI" : lead.status === "disqualified" ? "Override & Draft" : "Re-Draft (AI)"}
                             </button>
                           )}
                           <button onClick={() => setSequenceModal({ leadId: lead.id, companyName: lead.company_name, currentPersonaSlug: lead.persona_slug })}
-                            style={{ background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 5, padding: "4px 8px", color: "#7C6AC4", fontSize: 11, cursor: "pointer" }}>
+                            style={{ background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 5, padding: "3px 7px", color: "#7C6AC4", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                             Sequence
                           </button>
                           <button onClick={() => setHistoryModal({ leadId: lead.id, companyName: lead.company_name })}
-                            style={{ background: "rgba(76,142,201,0.1)", border: "1px solid rgba(76,142,201,0.3)", borderRadius: 5, padding: "4px 8px", color: "#4C8EC9", fontSize: 11, cursor: "pointer" }}>
+                            style={{ background: "rgba(76,142,201,0.1)", border: "1px solid rgba(76,142,201,0.3)", borderRadius: 5, padding: "3px 7px", color: "#4C8EC9", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                             History
                           </button>
                           {lead.status === "approved" && (
                             <button onClick={() => markSent(lead)}
-                              style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "4px 8px", color: "#4CC98E", fontSize: 11, cursor: "pointer" }}>
+                              style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "3px 7px", color: "#4CC98E", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                               Mark Sent
                             </button>
                           )}
                           <button onClick={() => deleteLead(lead)}
-                            style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "4px 8px", color: "#C94C4C", fontSize: 11, cursor: "pointer" }}>
+                            style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "3px 7px", color: "#C94C4C", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                             Delete
                           </button>
                         </div>

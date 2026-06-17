@@ -5,6 +5,7 @@ import { query } from "@/lib/db";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
+      ids?: number[];
       set_category?: string;
       set_status?: string;
       where_category?: string;
@@ -21,7 +22,10 @@ export async function POST(req: NextRequest) {
     }
 
     let where = "";
-    if (body.where_category) {
+    if (Array.isArray(body.ids) && body.ids.length > 0) {
+      values.push(body.ids);
+      where = `WHERE id = ANY($${values.length}::int[])`;
+    } else if (body.where_category) {
       values.push(body.where_category);
       where = `WHERE category = $${values.length}`;
     }
