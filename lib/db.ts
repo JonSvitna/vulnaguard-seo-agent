@@ -209,6 +209,7 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS hyperframes_prompt TEXT`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS outreach_intent TEXT`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'sales'`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS skill_slugs TEXT[] NOT NULL DEFAULT '{}'`)
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_leads_category ON leads (category)`)
       await pool.query(
         `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ('default', 'openai', 'gpt-4o') ON CONFLICT DO NOTHING`

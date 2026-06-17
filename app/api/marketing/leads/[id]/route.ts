@@ -19,6 +19,7 @@ const EDITABLE_FIELDS = [
   "persona_slug",
   "outreach_intent",
   "category",
+  "skill_slugs",
 ];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -83,6 +84,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         body.status = "discovered";
         body.score = 0;
         body.score_reason = null;
+        if (!fields.includes("skill_slugs")) fields.push("skill_slugs");
+        body.skill_slugs = [];
       }
     }
 

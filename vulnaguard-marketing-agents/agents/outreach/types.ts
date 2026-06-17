@@ -17,6 +17,7 @@ export interface OutreachLead {
   persona_slug?: string | null;
   outreach_intent?: string | null;
   category?: string | null;
+  skill_slugs?: string[] | null;
 }
 
 export interface QualifierResult {
