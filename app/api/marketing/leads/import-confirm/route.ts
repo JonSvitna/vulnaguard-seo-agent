@@ -21,10 +21,11 @@ function applyMapping(row: RawRow, mapping: Mapping): Partial<Record<LeadField, 
 export async function POST(req: NextRequest) {
   try {
     await ensureSchema();
-    const { mapping, all_rows, persona_slug } = await req.json() as {
+    const { mapping, all_rows, persona_slug, category } = await req.json() as {
       mapping: Mapping;
       all_rows: RawRow[];
       persona_slug?: string | null;
+      category?: string;
     };
 
     if (!mapping || !Array.isArray(all_rows)) {
@@ -48,15 +49,15 @@ export async function POST(req: NextRequest) {
         `INSERT INTO leads (
            company_name, website, location, org_type, cmmc_level_sought,
            employee_count, contact_name, contact_title, contact_email, contact_linkedin,
-           source, status, score, persona_slug
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'csv_import','discovered',0,$11)
+           source, status, score, persona_slug, category
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'csv_import','discovered',0,$11,$12)
          RETURNING *`,
         [
           fields.company_name, fields.website ?? null, fields.location ?? null,
           fields.org_type ?? null, fields.cmmc_level_sought ?? null,
           fields.employee_count ?? null, fields.contact_name ?? null,
           fields.contact_title ?? null, fields.contact_email ?? null,
-          fields.contact_linkedin ?? null, persona_slug ?? null,
+          fields.contact_linkedin ?? null, persona_slug ?? null, category ?? "sales",
         ]
       );
       inserted.push(rows[0]);
