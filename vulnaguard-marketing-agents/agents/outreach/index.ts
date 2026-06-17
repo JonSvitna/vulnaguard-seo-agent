@@ -65,7 +65,7 @@ export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> 
   return { score: parsed.score, score_reason: parsed.score_reason };
 }
 
-export async function draftSequence(lead: OutreachLead, personaSlug?: string | null): Promise<CopywriterResult> {
+export async function draftSequence(lead: OutreachLead, personaSlug?: string | null, outreachIntent?: string | null): Promise<CopywriterResult> {
   let systemPrompt = COPYWRITER_PROMPT;
 
   if (personaSlug) {
@@ -80,7 +80,10 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
     }
   }
 
-  const userContent = `Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
+  const intentSection = outreachIntent?.trim()
+    ? `## Outreach Goal\n\n${outreachIntent.trim()}\n\n`
+    : "";
+  const userContent = `${intentSection}Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
   const raw = await callAI('copywriter', systemPrompt, userContent, 4000);
   const parsed = parseJson(raw) as Partial<CopywriterResult>;
 

@@ -20,6 +20,7 @@ interface Lead {
   score: number;
   score_reason: string | null;
   persona_slug: string | null;
+  outreach_intent: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -275,12 +276,13 @@ const labelStyle: React.CSSProperties = { fontSize: 10, color: "#666", marginBot
 
 // ─── Draft / persona picker modal ─────────────────────────
 function DraftModal({ lead, onClose, onDraft }: {
-  lead: { id: number; company_name: string; persona_slug: string | null; status: string };
+  lead: { id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string };
   onClose: () => void;
-  onDraft: (personaSlug: string | null) => Promise<void>;
+  onDraft: (personaSlug: string | null, outreachIntent: string | null) => Promise<void>;
 }) {
   const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
   const [selected, setSelected] = useState<string>(lead.persona_slug ?? "");
+  const [intent, setIntent] = useState<string>(lead.outreach_intent ?? "");
   const [drafting, setDrafting] = useState(false);
 
   useEffect(() => {
@@ -289,7 +291,7 @@ function DraftModal({ lead, onClose, onDraft }: {
 
   const handleDraft = async () => {
     setDrafting(true);
-    try { await onDraft(selected || null); }
+    try { await onDraft(selected || null, intent.trim() || null); }
     finally { setDrafting(false); }
   };
 
@@ -300,9 +302,14 @@ function DraftModal({ lead, onClose, onDraft }: {
           This lead was disqualified by AI scoring. Drafting will force-qualify it and generate a sequence anyway.
         </div>
       )}
-      <p style={{ fontSize: 12, color: "#888", margin: "0 0 16px" }}>
-        Select an outreach persona to shape the tone and angle of the emails. You can change this and regenerate at any time.
-      </p>
+      <label style={labelStyle}>What&apos;s your goal with this lead?</label>
+      <textarea
+        value={intent}
+        onChange={e => setIntent(e.target.value)}
+        placeholder="e.g. &quot;Looking for subcontract work on their CMMC compliance projects&quot; or &quot;Partnership — they serve the same clients, want a referral relationship&quot;"
+        rows={3}
+        style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginBottom: 16 }}
+      />
       <label style={labelStyle}>Outreach Persona</label>
       <select style={{ ...fieldStyle, marginBottom: 20 }} value={selected} onChange={e => setSelected(e.target.value)}>
         <option value="">— None (use default voice) —</option>
@@ -656,7 +663,7 @@ export default function MarketingAgentDashboard() {
   // Modal state
   const [leadModal, setLeadModal] = useState<{ mode: "add" | "edit"; lead: Lead | null } | null>(null);
   const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; currentPersonaSlug?: string | null; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
-  const [draftModal, setDraftModal] = useState<{ id: number; company_name: string; persona_slug: string | null; status: string } | null>(null);
+  const [draftModal, setDraftModal] = useState<{ id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string } | null>(null);
   const [historyModal, setHistoryModal] = useState<{ leadId: number; companyName: string } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
@@ -949,11 +956,25 @@ export default function MarketingAgentDashboard() {
   };
 
   const runAI = (lead: Lead) => {
-    // Show persona picker first, then draft
-    setDraftModal({ id: lead.id, company_name: lead.company_name, persona_slug: lead.persona_slug, status: lead.status });
+    setDraftModal({ id: lead.id, company_name: lead.company_name, persona_slug: lead.persona_slug, outreach_intent: lead.outreach_intent, status: lead.status });
   };
 
-  const executeDraft = async (lead: { id: number; company_name: string; status?: string }, personaSlug: string | null) => {
+  const requalifyLead = async (lead: Lead) => {
+    try {
+      const res = await fetch(`/api/marketing/leads/${lead.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "qualified" }),
+      });
+      if (!res.ok) { showToast("Requalify failed", "#C94C4C"); return; }
+      showToast(`${lead.company_name} requalified`);
+      await refreshAll();
+    } catch {
+      showToast("Requalify failed", "#C94C4C");
+    }
+  };
+
+  const executeDraft = async (lead: { id: number; company_name: string; status?: string }, personaSlug: string | null, outreachIntent: string | null) => {
     setDraftModal(null);
     setAiRunningId(lead.id);
     try {
@@ -962,6 +983,7 @@ export default function MarketingAgentDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           persona_slug: personaSlug,
+          outreach_intent: outreachIntent,
           force_qualify: lead.status === "disqualified",
         }),
       });
@@ -1068,7 +1090,7 @@ export default function MarketingAgentDashboard() {
         <DraftModal
           lead={draftModal}
           onClose={() => setDraftModal(null)}
-          onDraft={(personaSlug) => executeDraft(draftModal, personaSlug)}
+          onDraft={(personaSlug, outreachIntent) => executeDraft(draftModal, personaSlug, outreachIntent)}
         />
       )}
       {historyModal && (
@@ -1469,6 +1491,12 @@ export default function MarketingAgentDashboard() {
                             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 8px", color: "#888", fontSize: 11, cursor: "pointer" }}>
                             Edit
                           </button>
+                          {lead.status === "disqualified" && (
+                            <button onClick={() => requalifyLead(lead)}
+                              style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "4px 8px", color: "#4CC98E", fontSize: 11, cursor: "pointer" }}>
+                              Requalify
+                            </button>
+                          )}
                           {(lead.status === "discovered" || lead.status === "qualified" || lead.status === "disqualified") && (
                             <button onClick={() => runAI(lead)} disabled={aiRunningId === lead.id}
                               style={{ background: lead.status === "disqualified" ? "rgba(201,76,76,0.1)" : "rgba(201,168,76,0.1)", border: `1px solid ${lead.status === "disqualified" ? "rgba(201,76,76,0.3)" : "rgba(201,168,76,0.3)"}`, borderRadius: 5, padding: "4px 8px", color: lead.status === "disqualified" ? "#C94C4C" : "#C9A84C", fontSize: 11, cursor: aiRunningId === lead.id ? "not-allowed" : "pointer", opacity: aiRunningId === lead.id ? 0.6 : 1 }}>

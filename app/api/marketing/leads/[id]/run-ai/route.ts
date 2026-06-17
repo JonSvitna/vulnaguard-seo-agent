@@ -10,6 +10,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const body = await req.json().catch(() => ({})) as {
       persona_slug?: string | null;
       force_qualify?: boolean;
+      outreach_intent?: string | null;
     };
 
     const leads = await query<OutreachLead>(`SELECT * FROM leads WHERE id = $1`, [id]);
@@ -18,10 +19,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
     let lead = leads[0];
 
-    // Persist persona override if caller provided one
+    // Persist persona + intent overrides if caller provided them
     if ("persona_slug" in body) {
       await query(`UPDATE leads SET persona_slug = $1, updated_at = NOW() WHERE id = $2`, [body.persona_slug ?? null, id]);
       lead = { ...lead, persona_slug: body.persona_slug ?? null };
+    }
+    if ("outreach_intent" in body) {
+      await query(`UPDATE leads SET outreach_intent = $1, updated_at = NOW() WHERE id = $2`, [body.outreach_intent ?? null, id]);
+      lead = { ...lead, outreach_intent: body.outreach_intent ?? null };
     }
 
     // Run qualification if needed
@@ -43,7 +48,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
-    const draft = await draftSequence(lead, personaSlug);
+    const outreachIntent = ("outreach_intent" in body ? body.outreach_intent : lead.outreach_intent) ?? null;
+    const draft = await draftSequence(lead, personaSlug, outreachIntent);
 
     // Auto-persist draft immediately — lead advances to 'drafted' regardless of whether
     // the user clicks Save in the modal. Prevents silent loss on modal close.

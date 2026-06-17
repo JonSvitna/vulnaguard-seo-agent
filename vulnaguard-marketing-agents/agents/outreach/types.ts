@@ -15,6 +15,7 @@ export interface OutreachLead {
   score: number;
   score_reason: string | null;
   persona_slug?: string | null;
+  outreach_intent?: string | null;
 }
 
 export interface QualifierResult {
