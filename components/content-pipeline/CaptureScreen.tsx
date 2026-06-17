@@ -1,12 +1,16 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import type { CaptureMode } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
 
+interface VoiceSkill { slug: string; name: string }
+
 interface CaptureScreenProps {
-  onSubmit: (input: string, mode: CaptureMode) => void;
+  onSubmit: (input: string, mode: CaptureMode, voiceSkillSlug: string | null) => void;
   error: string;
 }
+
+const LS_KEY = "content_pipeline_voice_skill";
 
 export function CaptureScreen({ onSubmit, error }: CaptureScreenProps) {
   const [tab, setTab] = useState<CaptureMode>("type");
@@ -17,6 +21,32 @@ export function CaptureScreen({ onSubmit, error }: CaptureScreenProps) {
   const [videoContext, setVideoContext] = useState("");
   const recognitionRef = useRef<any>(null);
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Voice skill selection
+  const [voiceSkills, setVoiceSkills] = useState<VoiceSkill[]>([]);
+  const [selectedSkill, setSelectedSkill] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/marketing/personas?type=voice")
+      .then(r => r.json())
+      .then(d => {
+        const skills: VoiceSkill[] = d.personas ?? [];
+        setVoiceSkills(skills);
+        // Restore last selection or default to first
+        const saved = typeof window !== "undefined" ? localStorage.getItem(LS_KEY) : null;
+        if (saved && skills.some(s => s.slug === saved)) {
+          setSelectedSkill(saved);
+        } else if (skills.length > 0) {
+          setSelectedSkill(skills[0].slug);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSkillChange = (slug: string) => {
+    setSelectedSkill(slug);
+    if (typeof window !== "undefined") localStorage.setItem(LS_KEY, slug);
+  };
 
   const getActiveInput = () => {
     if (tab === "type") return textInput.trim();
@@ -56,7 +86,7 @@ export function CaptureScreen({ onSubmit, error }: CaptureScreenProps) {
   const handleSubmit = () => {
     const input = getActiveInput();
     if (!input) return;
-    onSubmit(input, tab);
+    onSubmit(input, tab, selectedSkill || null);
   };
 
   const hasInput = !!getActiveInput();
@@ -65,23 +95,22 @@ export function CaptureScreen({ onSubmit, error }: CaptureScreenProps) {
     <div className="max-w-2xl mx-auto px-6 py-10">
       <div className="text-center mb-9">
         <h1 className="text-3xl font-bold text-white mb-2 leading-tight">What&apos;s on your mind?</h1>
-        <p className="text-[#6B7A99] text-base">Drop a raw idea. Get 5 platform-ready posts in seconds.</p>
+        <p style={{ color: "#6B7A99" }} className="text-base">Drop a raw idea. Get 5 platform-ready posts in seconds.</p>
       </div>
 
-      <div className="bg-[#111827] border border-[#1F2D45] rounded-2xl overflow-hidden">
+      <div style={{ background: "#111827", border: "1px solid #1F2D45", borderRadius: 16, overflow: "hidden" }}>
         {/* Tabs */}
-        <div className="flex border-b border-[#1F2D45]">
+        <div style={{ display: "flex", borderBottom: "1px solid #1F2D45" }}>
           {(["type", "voice", "video"] as CaptureMode[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className="flex-1 py-3.5 text-sm font-semibold transition-all duration-200 capitalize"
               style={{
-                background: "none",
-                border: "none",
+                flex: 1, padding: "14px 0", fontSize: 14, fontWeight: 600,
+                background: "none", border: "none",
                 borderBottom: tab === t ? "2px solid #C9A84C" : "2px solid transparent",
                 color: tab === t ? "#C9A84C" : "#6B7A99",
-                cursor: "pointer",
+                cursor: "pointer", textTransform: "capitalize",
               }}
             >
               {t}
@@ -89,93 +118,99 @@ export function CaptureScreen({ onSubmit, error }: CaptureScreenProps) {
           ))}
         </div>
 
-        {/* Tab content */}
-        <div className="p-5">
+        <div style={{ padding: 20 }}>
           {tab === "type" && (
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
               placeholder="Brain dump here. Voice memo transcript. Pasted conversation. Rough notes from a build session. Anything."
-              className="w-full min-h-[180px] bg-transparent border-none text-white text-base leading-relaxed resize-none outline-none font-sans placeholder:text-[#4A5568]"
+              style={{ width: "100%", minHeight: 180, background: "transparent", border: "none", color: "#fff", fontSize: 15, lineHeight: 1.6, resize: "none", outline: "none", fontFamily: "inherit" }}
               autoFocus
             />
           )}
 
           {tab === "voice" && (
-            <div className="flex flex-col gap-4">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <button
                 onClick={toggleRecording}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl font-bold text-sm transition-all duration-200 w-fit"
                 style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "10px 20px", borderRadius: 12, fontWeight: 700, fontSize: 14,
                   background: isRecording ? "#C0392B22" : "#C9A84C22",
                   border: `1px solid ${isRecording ? "#C0392B" : "#C9A84C"}`,
                   color: isRecording ? "#C0392B" : "#C9A84C",
-                  cursor: "pointer",
+                  cursor: "pointer", width: "fit-content",
                 }}
               >
-                <span
-                  className="w-2.5 h-2.5 rounded-full inline-block"
-                  style={{
-                    background: isRecording ? "#C0392B" : "#C9A84C",
-                    animation: isRecording ? "pulse 1s infinite" : "none",
-                  }}
-                />
+                <span style={{ width: 10, height: 10, borderRadius: "50%", background: isRecording ? "#C0392B" : "#C9A84C", display: "inline-block", animation: isRecording ? "pulse 1s infinite" : "none" }} />
                 {isRecording ? "Stop Recording" : "Start Recording"}
               </button>
-
               {transcript ? (
-                <div className="bg-[#0B0F1A] rounded-lg p-3.5 border border-[#1F2D45] text-white text-sm leading-relaxed min-h-[100px]">
+                <div style={{ background: "#0B0F1A", borderRadius: 8, padding: "14px", border: "1px solid #1F2D45", color: "#fff", fontSize: 14, lineHeight: 1.6, minHeight: 100 }}>
                   {transcript}
                 </div>
-              ) : (
-                !isRecording && (
-                  <p className="text-[#6B7A99] text-sm leading-relaxed">
-                    Hit record and talk through your idea. Doesn&apos;t need to be polished — just talk.
-                  </p>
-                )
+              ) : !isRecording && (
+                <p style={{ color: "#6B7A99", fontSize: 14, lineHeight: 1.6 }}>
+                  Hit record and talk through your idea. Doesn&apos;t need to be polished — just talk.
+                </p>
               )}
             </div>
           )}
 
           {tab === "video" && (
-            <div className="flex flex-col gap-4">
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
               <div
                 onClick={() => videoInputRef.current?.click()}
-                className="border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200"
                 style={{
-                  borderColor: videoFile ? "#C9A84C" : "#1F2D45",
+                  border: `2px dashed ${videoFile ? "#C9A84C" : "#1F2D45"}`,
                   background: videoFile ? "#C9A84C08" : "none",
+                  borderRadius: 12, padding: "32px", textAlign: "center", cursor: "pointer",
                 }}
               >
-                <div className="text-3xl mb-2">🎥</div>
-                <div
-                  className="text-sm font-semibold"
-                  style={{ color: videoFile ? "#C9A84C" : "#6B7A99" }}
-                >
+                <div style={{ fontSize: 28, marginBottom: 8 }}>🎥</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: videoFile ? "#C9A84C" : "#6B7A99" }}>
                   {videoFile ? videoFile.name : "Upload your face-cam clip"}
                 </div>
-                <div className="text-[#4A5568] text-xs mt-1">mp4, mov</div>
+                <div style={{ color: "#4A5568", fontSize: 12, marginTop: 4 }}>mp4, mov</div>
               </div>
-              <input
-                ref={videoInputRef}
-                type="file"
-                accept="video/*"
-                className="hidden"
-                onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
-              />
+              <input ref={videoInputRef} type="file" accept="video/*" style={{ display: "none" }} onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)} />
               <textarea
                 value={videoContext}
                 onChange={(e) => setVideoContext(e.target.value)}
                 placeholder="Optional: describe what you're talking about in the video so content generation is more accurate."
-                className="w-full min-h-[80px] bg-[#0B0F1A] border border-[#1F2D45] rounded-lg text-white text-sm leading-relaxed resize-none outline-none p-3 font-sans placeholder:text-[#4A5568]"
+                style={{ width: "100%", minHeight: 80, background: "#0B0F1A", border: "1px solid #1F2D45", borderRadius: 8, color: "#fff", fontSize: 14, lineHeight: 1.6, resize: "none", outline: "none", padding: 12, fontFamily: "inherit" }}
               />
             </div>
           )}
         </div>
       </div>
 
+      {/* Voice skill selector */}
+      {voiceSkills.length > 0 && (
+        <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 10 }}>
+          <label style={{ fontSize: 11, color: "#6B7A99", textTransform: "uppercase", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>Voice Skill</label>
+          <select
+            value={selectedSkill}
+            onChange={e => handleSkillChange(e.target.value)}
+            style={{ flex: 1, background: "#111827", border: "1px solid #1F2D45", borderRadius: 8, color: "#C9A84C", fontSize: 13, padding: "7px 10px", outline: "none", cursor: "pointer" }}
+          >
+            <option value="">— None (default) —</option>
+            {voiceSkills.map(s => (
+              <option key={s.slug} value={s.slug}>{s.name}</option>
+            ))}
+          </select>
+          <a
+            href="#voice-skills"
+            onClick={e => { e.preventDefault(); window.dispatchEvent(new CustomEvent("openVoiceSkills")); }}
+            style={{ fontSize: 11, color: "#6B7A99", textDecoration: "none", whiteSpace: "nowrap" }}
+          >
+            Manage →
+          </a>
+        </div>
+      )}
+
       {error && (
-        <div className="mt-3 text-red-400 text-sm px-3.5 py-2.5 bg-red-500/10 rounded-lg border border-red-500/20">
+        <div style={{ marginTop: 12, color: "#f87171", fontSize: 14, padding: "10px 14px", background: "rgba(239,68,68,0.1)", borderRadius: 8, border: "1px solid rgba(239,68,68,0.2)" }}>
           {error}
         </div>
       )}
@@ -183,15 +218,17 @@ export function CaptureScreen({ onSubmit, error }: CaptureScreenProps) {
       <button
         onClick={handleSubmit}
         disabled={!hasInput}
-        className="w-full mt-5 py-4 rounded-xl font-bold text-base transition-all duration-200 tracking-wide disabled:cursor-not-allowed"
         style={{
+          width: "100%", marginTop: 20, padding: "16px 0", borderRadius: 12, fontWeight: 700,
+          fontSize: 16, border: "none", cursor: hasInput ? "pointer" : "not-allowed",
           background: hasInput ? "#C9A84C" : "#1F2D45",
           color: hasInput ? "#0D1B2E" : "#6B7A99",
+          letterSpacing: "0.02em",
         }}
       >
         Generate Content →
       </button>
-      <p className="text-center text-[#6B7A99] text-xs mt-2.5">
+      <p style={{ textAlign: "center", color: "#6B7A99", fontSize: 12, marginTop: 10 }}>
         LinkedIn · Instagram · Facebook · YouTube · Shorts
       </p>
 

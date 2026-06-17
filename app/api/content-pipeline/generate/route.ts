@@ -5,7 +5,7 @@ import type { CaptureMode } from "@/vulnaguard-marketing-agents/agents/content-p
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { rawInput, captureMode, brand } = body;
+    const { rawInput, captureMode, brand, voiceSkillSlug } = body;
 
     if (!rawInput?.trim()) {
       return NextResponse.json(
@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
       rawInput: rawInput.trim(),
       captureMode: captureMode as CaptureMode,
       brand: brand ?? "vulnaguard",
+      voiceSkillSlug: voiceSkillSlug ?? null,
     });
 
     return NextResponse.json({ success: true, record });

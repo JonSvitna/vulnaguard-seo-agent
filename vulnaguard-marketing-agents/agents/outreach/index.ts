@@ -1,7 +1,6 @@
-import fs from 'fs';
-import path from 'path';
 import { QUALIFIER_PROMPT, COPYWRITER_PROMPT } from "./systemPrompts";
 import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
+import { query } from "@/lib/db";
 import type { OutreachLead, QualifierResult, CopywriterResult } from "./types";
 
 function leadProfile(lead: OutreachLead): string {
@@ -70,12 +69,14 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
   let systemPrompt = COPYWRITER_PROMPT;
 
   if (personaSlug) {
-    const personaPath = path.join(process.cwd(), 'vulnaguard-marketing-agents', 'personas', `${personaSlug}.md`);
-    try {
-      const personaContent = fs.readFileSync(personaPath, 'utf-8');
-      systemPrompt = `## Sender Persona\n\n${personaContent}\n\n---\n\n${COPYWRITER_PROMPT}`;
-    } catch {
-      console.warn(`[outreach] persona file not found: ${personaPath}`);
+    const rows = await query<{ body: string }>(
+      `SELECT body FROM personas WHERE slug = $1`,
+      [personaSlug]
+    );
+    if (rows.length) {
+      systemPrompt = `## Sender Persona\n\n${rows[0].body}\n\n---\n\n${COPYWRITER_PROMPT}`;
+    } else {
+      console.warn(`[outreach] persona not found in DB: ${personaSlug}`);
     }
   }
 

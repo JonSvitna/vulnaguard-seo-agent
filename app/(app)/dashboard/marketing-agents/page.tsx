@@ -273,6 +273,49 @@ function Modal({ title, onClose, children, width = 520 }: { title: string; onClo
 const fieldStyle: React.CSSProperties = { width: "100%", background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "7px 10px", color: "#ccc", fontSize: 12, outline: "none", boxSizing: "border-box" };
 const labelStyle: React.CSSProperties = { fontSize: 10, color: "#666", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em", display: "block" };
 
+// ─── Draft / persona picker modal ─────────────────────────
+function DraftModal({ lead, onClose, onDraft }: {
+  lead: { id: number; company_name: string; persona_slug: string | null; status: string };
+  onClose: () => void;
+  onDraft: (personaSlug: string | null) => Promise<void>;
+}) {
+  const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
+  const [selected, setSelected] = useState<string>(lead.persona_slug ?? "");
+  const [drafting, setDrafting] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/marketing/personas").then(r => r.json()).then(d => setPersonas(d.personas ?? [])).catch(() => {});
+  }, []);
+
+  const handleDraft = async () => {
+    setDrafting(true);
+    try { await onDraft(selected || null); }
+    finally { setDrafting(false); }
+  };
+
+  return (
+    <Modal title={`Draft Sequence — ${lead.company_name}`} onClose={onClose}>
+      {lead.status === "disqualified" && (
+        <div style={{ background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 7, padding: "10px 12px", marginBottom: 14, fontSize: 12, color: "#C9A84C" }}>
+          This lead was disqualified by AI scoring. Drafting will force-qualify it and generate a sequence anyway.
+        </div>
+      )}
+      <p style={{ fontSize: 12, color: "#888", margin: "0 0 16px" }}>
+        Select an outreach persona to shape the tone and angle of the emails. You can change this and regenerate at any time.
+      </p>
+      <label style={labelStyle}>Outreach Persona</label>
+      <select style={{ ...fieldStyle, marginBottom: 20 }} value={selected} onChange={e => setSelected(e.target.value)}>
+        <option value="">— None (use default voice) —</option>
+        {personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+      </select>
+      <button onClick={handleDraft} disabled={drafting}
+        style={{ width: "100%", padding: "10px", background: drafting ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: drafting ? "not-allowed" : "pointer" }}>
+        {drafting ? "Drafting with AI..." : "Draft with AI"}
+      </button>
+    </Modal>
+  );
+}
+
 // ─── Lead modal (add / edit) ───────────────────────────────
 function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () => void; onSave: (payload: Partial<Lead>) => Promise<void> }) {
   const [form, setForm] = useState<Partial<Lead>>(lead ?? {
@@ -355,7 +398,7 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
 }
 
 // ─── Sequence editor modal ─────────────────────────────────
-function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSave }: { leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string }; onClose: () => void; onSave: () => Promise<void> }) {
+function SequenceEditorModal({ leadId, companyName, initialDraft, currentPersonaSlug, onClose, onSave }: { leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string }; currentPersonaSlug?: string | null; onClose: () => void; onSave: () => Promise<void> }) {
   const [emails, setEmails] = useState<PendingEmail[]>(
     initialDraft?.emails ?? [
       { touch_number: 1, subject: "", body: "" },
@@ -366,6 +409,9 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSav
   const [linkedinMessage, setLinkedinMessage] = useState(initialDraft?.linkedin_message ?? "");
   const [loading, setLoading] = useState(!initialDraft);
   const [saving, setSaving] = useState(false);
+  const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
+  const [regenPersona, setRegenPersona] = useState<string>(currentPersonaSlug ?? "");
+  const [regenerating, setRegenerating] = useState(false);
 
   useEffect(() => {
     if (initialDraft) return;
@@ -388,6 +434,28 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSav
     return () => { cancelled = true; };
   }, [leadId, initialDraft]);
 
+  useEffect(() => {
+    fetch("/api/marketing/personas").then(r => r.json()).then(d => setPersonas(d.personas ?? [])).catch(() => {});
+  }, []);
+
+  const regenerateWithAI = async () => {
+    setRegenerating(true);
+    try {
+      const res = await fetch(`/api/marketing/leads/${leadId}/run-ai`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ persona_slug: regenPersona || null }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.draft) return;
+      const draft = data.draft as { emails: PendingEmail[]; linkedin_message: string };
+      setEmails(draft.emails);
+      setLinkedinMessage(draft.linkedin_message);
+    } finally {
+      setRegenerating(false);
+    }
+  };
+
   const updateEmail = (idx: number, field: "subject" | "body", value: string) => {
     setEmails(es => es.map((e, i) => i === idx ? { ...e, [field]: value } : e));
   };
@@ -409,6 +477,21 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSav
 
   return (
     <Modal title={`Sequence — ${companyName}`} onClose={onClose} width={640}>
+      {/* Regenerate with AI */}
+      <div style={{ marginBottom: 16, padding: "12px 14px", background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.2)", borderRadius: 8, display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 180 }}>
+          <label style={labelStyle}>Persona</label>
+          <select style={{ ...fieldStyle }} value={regenPersona} onChange={e => setRegenPersona(e.target.value)}>
+            <option value="">— None (default voice) —</option>
+            {personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+          </select>
+        </div>
+        <button onClick={regenerateWithAI} disabled={regenerating}
+          style={{ padding: "8px 16px", background: regenerating ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: regenerating ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+          {regenerating ? "Drafting..." : "Draft with AI"}
+        </button>
+      </div>
+
       {loading ? (
         <div style={{ padding: "30px 0", textAlign: "center", color: "#555", fontSize: 12 }}>Loading...</div>
       ) : (
@@ -434,6 +517,58 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, onClose, onSav
           </button>
         </>
       )}
+    </Modal>
+  );
+}
+
+// ─── Persona editor modal ─────────────────────────────────
+function PersonaEditorModal({ persona, onClose, onSave }: {
+  persona: { slug: string; name: string; body: string } | null;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const [name, setName] = useState(persona?.name ?? "");
+  const [body, setBody] = useState(persona?.body ?? "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    if (!name.trim() || !body.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/marketing/personas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: persona?.slug, name, body }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Save failed"); return; }
+      onSave();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={persona ? `Edit — ${persona.name}` : "New Persona"} onClose={onClose} width={640}>
+      <p style={{ fontSize: 12, color: "#666", margin: "0 0 14px" }}>
+        Personas shape how the AI writes your outreach — tone, angle, CTA, and talking points. Write in plain markdown.
+      </p>
+      {error && <div style={{ color: "#C94C4C", fontSize: 12, marginBottom: 10 }}>{error}</div>}
+      <label style={labelStyle}>Persona Name</label>
+      <input style={{ ...fieldStyle, marginBottom: 12 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. New Startup Introduction" />
+      <label style={labelStyle}>Persona Body (Markdown)</label>
+      <textarea
+        style={{ ...fieldStyle, minHeight: 320, fontFamily: "monospace", fontSize: 12, resize: "vertical", marginBottom: 14 }}
+        value={body}
+        onChange={e => setBody(e.target.value)}
+        placeholder={`# My Persona\n**Stage:** ...\n**Value prop:** ...\n**Tone:** ...\n**CTA:** ...\n\n## Extended Instructions\n...`}
+      />
+      <button onClick={handleSave} disabled={saving || !name.trim() || !body.trim()}
+        style={{ width: "100%", padding: "10px", background: (saving || !name.trim() || !body.trim()) ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: (saving || !name.trim() || !body.trim()) ? "not-allowed" : "pointer" }}>
+        {saving ? "Saving..." : persona ? "Save Changes" : "Create Persona"}
+      </button>
     </Modal>
   );
 }
@@ -507,11 +642,21 @@ export default function MarketingAgentDashboard() {
     qualifier_min_score: "6", daily_send_limit: "50", batch_size: "10",
     smtp_from: "",
   });
+  const [resendConfigured, setResendConfigured] = useState(true);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [testEmailTo, setTestEmailTo] = useState("");
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<{ ok: boolean; error?: string } | null>(null);
+
+  // Personas tab state
+  const [personasList, setPersonasList] = useState<{ slug: string; name: string; preview: string; body: string }[]>([]);
+  const [personaEditorModal, setPersonaEditorModal] = useState<{ persona: { slug: string; name: string; body: string } | null } | null>(null);
+  const [deletingPersonaSlug, setDeletingPersonaSlug] = useState<string | null>(null);
 
   // Modal state
   const [leadModal, setLeadModal] = useState<{ mode: "add" | "edit"; lead: Lead | null } | null>(null);
-  const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
+  const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; currentPersonaSlug?: string | null; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
+  const [draftModal, setDraftModal] = useState<{ id: number; company_name: string; persona_slug: string | null; status: string } | null>(null);
   const [historyModal, setHistoryModal] = useState<{ leadId: number; companyName: string } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
@@ -601,8 +746,13 @@ export default function MarketingAgentDashboard() {
       const res = await fetch("/api/marketing/send-queue/send-batch", { method: "POST" });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Batch send failed", "#C94C4C"); return; }
-      if (data.total === 0) { showToast("No emails due right now", "#C9A84C"); return; }
-      showToast(`Sent ${data.sent}/${data.total} emails${data.failed ? ` (${data.failed} failed)` : ""}`);
+      if (data.capped) { showToast(data.message ?? "Daily send limit reached", "#C9A84C"); return; }
+      if (data.total === 0 && !data.skipped_linkedin) { showToast("No emails due right now", "#C9A84C"); return; }
+      const parts = [`Sent ${data.sent}/${data.total}`];
+      if (data.failed) parts.push(`${data.failed} failed`);
+      if (data.skipped_linkedin) parts.push(`${data.skipped_linkedin} LinkedIn-only skipped`);
+      if (data.remaining_today != null) parts.push(`${data.remaining_today} remaining today`);
+      showToast(parts.join(" · "));
       await refreshAll();
     } finally {
       setSendingBatch(false);
@@ -651,7 +801,8 @@ export default function MarketingAgentDashboard() {
   const fetchConfig = useCallback(async () => {
     const res = await fetch("/api/marketing/config");
     if (!res.ok) return;
-    const { config } = await res.json();
+    const { config, resend_configured } = await res.json();
+    if (resend_configured !== undefined) setResendConfigured(resend_configured);
     if (config.llm_provider) setProvider(config.llm_provider);
     if (config.llm_tier) setTier(config.llm_tier);
     setSettings(s => ({
@@ -663,6 +814,14 @@ export default function MarketingAgentDashboard() {
     }));
   }, []);
 
+  const fetchPersonas = useCallback(async () => {
+    const res = await fetch("/api/marketing/personas");
+    if (res.ok) {
+      const data = await res.json();
+      setPersonasList(data.personas ?? []);
+    }
+  }, []);
+
   const refreshAll = useCallback(async () => {
     await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue()]);
   }, [fetchStats, fetchLeads, fetchPending, fetchQueue]);
@@ -670,10 +829,10 @@ export default function MarketingAgentDashboard() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchConfig()]);
+      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchConfig(), fetchPersonas()]);
       setLoading(false);
     })();
-  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchConfig]);
+  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchConfig, fetchPersonas]);
 
   const toggleProvider = async (p: string) => {
     setProvider(p);
@@ -762,6 +921,7 @@ export default function MarketingAgentDashboard() {
   };
 
   const markSent = async (lead: Lead) => {
+    if (!confirm(`Mark all touches for ${lead.company_name} as sent? This cannot be undone.`)) return;
     const res = await fetch(`/api/marketing/leads/${lead.id}`);
     const data = await res.json();
     const seqId = data.sequence?.id;
@@ -771,17 +931,47 @@ export default function MarketingAgentDashboard() {
     await refreshAll();
   };
 
-  const runAI = async (lead: Lead) => {
+  const markLinkedInSent = async (item: QueueEmail) => {
+    setSendingEmailId(item.id);
+    try {
+      const res = await fetch(`/api/marketing/emails/${item.id}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manual: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Mark failed", "#C94C4C"); return; }
+      showToast(`Touch ${item.touch_number} for ${item.company_name} marked as sent`);
+      await refreshAll();
+    } finally {
+      setSendingEmailId(null);
+    }
+  };
+
+  const runAI = (lead: Lead) => {
+    // Show persona picker first, then draft
+    setDraftModal({ id: lead.id, company_name: lead.company_name, persona_slug: lead.persona_slug, status: lead.status });
+  };
+
+  const executeDraft = async (lead: { id: number; company_name: string; status?: string }, personaSlug: string | null) => {
+    setDraftModal(null);
     setAiRunningId(lead.id);
     try {
-      const res = await fetch(`/api/marketing/leads/${lead.id}/run-ai`, { method: "POST" });
+      const res = await fetch(`/api/marketing/leads/${lead.id}/run-ai`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          persona_slug: personaSlug,
+          force_qualify: lead.status === "disqualified",
+        }),
+      });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "AI run failed", "#C94C4C"); return; }
 
       await refreshAll();
 
       if (data.draft) {
-        setSequenceModal({ leadId: lead.id, companyName: data.lead.company_name, initialDraft: data.draft });
+        setSequenceModal({ leadId: lead.id, companyName: data.lead.company_name, currentPersonaSlug: personaSlug, initialDraft: data.draft });
       } else {
         const updated: Lead = data.lead;
         if (updated.status === "disqualified") {
@@ -844,6 +1034,7 @@ export default function MarketingAgentDashboard() {
     { id: "queue", label: "Send Queue", count: queue.due.length },
     { id: "pipeline", label: "Pipeline", count: null },
     { id: "leads", label: "Leads", count: stats.total },
+    { id: "personas", label: "Personas", count: personasList.length },
     { id: "settings", label: "Settings", count: null },
   ];
 
@@ -868,8 +1059,16 @@ export default function MarketingAgentDashboard() {
           leadId={sequenceModal.leadId}
           companyName={sequenceModal.companyName}
           initialDraft={sequenceModal.initialDraft}
+          currentPersonaSlug={sequenceModal.currentPersonaSlug}
           onClose={() => setSequenceModal(null)}
           onSave={async () => { setSequenceModal(null); showToast("Sequence saved — added to Approval Queue"); await refreshAll(); }}
+        />
+      )}
+      {draftModal && (
+        <DraftModal
+          lead={draftModal}
+          onClose={() => setDraftModal(null)}
+          onDraft={(personaSlug) => executeDraft(draftModal, personaSlug)}
         />
       )}
       {historyModal && (
@@ -877,6 +1076,13 @@ export default function MarketingAgentDashboard() {
           leadId={historyModal.leadId}
           companyName={historyModal.companyName}
           onClose={() => setHistoryModal(null)}
+        />
+      )}
+      {personaEditorModal !== null && (
+        <PersonaEditorModal
+          persona={personaEditorModal.persona}
+          onClose={() => setPersonaEditorModal(null)}
+          onSave={async () => { setPersonaEditorModal(null); await fetchPersonas(); showToast("Persona saved"); }}
         />
       )}
 
@@ -982,6 +1188,12 @@ export default function MarketingAgentDashboard() {
         {tab === "queue" && (
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Send Queue</h2>
+            {!resendConfigured && (
+              <div style={{ background: "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.4)", borderRadius: 8, padding: "12px 16px", marginBottom: 16, fontSize: 12, color: "#C9A84C" }}>
+                <strong>Resend not configured.</strong> Email sending is disabled until you add <span style={{ fontFamily: "monospace" }}>RESEND_API_KEY</span> to your environment variables.
+                Go to <strong>Settings → API Keys</strong> to verify your key is set, then set a <strong>From Address</strong> in the Marketing section.
+              </div>
+            )}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
               <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
                 Touches due now from approved sequences. Send via Resend or copy to your email client.
@@ -1018,10 +1230,15 @@ export default function MarketingAgentDashboard() {
                             {item.contact_name && <span style={{ fontSize: 11, color: "#666" }}>{item.contact_name}</span>}
                           </div>
                           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                            {item.contact_email && (
+                            {item.contact_email ? (
                               <button onClick={() => sendSingleEmail(item)} disabled={sendingEmailId === item.id}
                                 style={{ background: sendingEmailId === item.id ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 5, padding: "5px 10px", color: "#0D0F14", fontSize: 11, fontWeight: 700, cursor: sendingEmailId === item.id ? "not-allowed" : "pointer" }}>
                                 {sendingEmailId === item.id ? "Sending..." : "Send via Resend"}
+                              </button>
+                            ) : (
+                              <button onClick={() => markLinkedInSent(item)} disabled={sendingEmailId === item.id}
+                                style={{ background: sendingEmailId === item.id ? "rgba(76,142,201,0.3)" : "linear-gradient(135deg, #4C8EC9, #2A5A8B)", border: "none", borderRadius: 5, padding: "5px 10px", color: "#fff", fontSize: 11, fontWeight: 700, cursor: sendingEmailId === item.id ? "not-allowed" : "pointer" }}>
+                                {sendingEmailId === item.id ? "Marking..." : "Mark LinkedIn Sent"}
                               </button>
                             )}
                             <button onClick={() => copyEmail(item)}
@@ -1252,13 +1469,13 @@ export default function MarketingAgentDashboard() {
                             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 8px", color: "#888", fontSize: 11, cursor: "pointer" }}>
                             Edit
                           </button>
-                          {(lead.status === "discovered" || lead.status === "qualified") && (
+                          {(lead.status === "discovered" || lead.status === "qualified" || lead.status === "disqualified") && (
                             <button onClick={() => runAI(lead)} disabled={aiRunningId === lead.id}
-                              style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 5, padding: "4px 8px", color: "#C9A84C", fontSize: 11, cursor: aiRunningId === lead.id ? "not-allowed" : "pointer", opacity: aiRunningId === lead.id ? 0.6 : 1 }}>
-                              {aiRunningId === lead.id ? "Running..." : lead.status === "discovered" ? "Run AI" : "Draft Sequence (AI)"}
+                              style={{ background: lead.status === "disqualified" ? "rgba(201,76,76,0.1)" : "rgba(201,168,76,0.1)", border: `1px solid ${lead.status === "disqualified" ? "rgba(201,76,76,0.3)" : "rgba(201,168,76,0.3)"}`, borderRadius: 5, padding: "4px 8px", color: lead.status === "disqualified" ? "#C94C4C" : "#C9A84C", fontSize: 11, cursor: aiRunningId === lead.id ? "not-allowed" : "pointer", opacity: aiRunningId === lead.id ? 0.6 : 1 }}>
+                              {aiRunningId === lead.id ? "Running..." : lead.status === "discovered" ? "Run AI" : lead.status === "disqualified" ? "Override & Draft" : "Re-Draft (AI)"}
                             </button>
                           )}
-                          <button onClick={() => setSequenceModal({ leadId: lead.id, companyName: lead.company_name })}
+                          <button onClick={() => setSequenceModal({ leadId: lead.id, companyName: lead.company_name, currentPersonaSlug: lead.persona_slug })}
                             style={{ background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.3)", borderRadius: 5, padding: "4px 8px", color: "#7C6AC4", fontSize: 11, cursor: "pointer" }}>
                             Sequence
                           </button>
@@ -1283,6 +1500,63 @@ export default function MarketingAgentDashboard() {
                 </tbody>
               </table>
             </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Personas ── */}
+        {tab === "personas" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Outreach Personas</h2>
+                <p style={{ fontSize: 12, color: "#666", margin: 0 }}>Each persona shapes the AI's tone, angle, and talking points when drafting email sequences.</p>
+              </div>
+              <button onClick={() => setPersonaEditorModal({ persona: null })}
+                style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "8px 16px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                + New Persona
+              </button>
+            </div>
+
+            {personasList.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>✍</div>
+                <div style={{ fontSize: 14 }}>No personas yet</div>
+                <div style={{ fontSize: 12, marginTop: 6, color: "#333" }}>Create one to give your outreach a distinct voice</div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {personasList.map(p => (
+                  <div key={p.slug} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, background: "rgba(255,255,255,0.02)", padding: "16px 18px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{p.name}</span>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#666", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 3, padding: "1px 6px" }}>{p.slug}</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: "#666", margin: 0, lineHeight: 1.6 }}>{p.preview}</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => setPersonaEditorModal({ persona: { slug: p.slug, name: p.name, body: p.body } })}
+                          style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 5, padding: "5px 10px", color: "#C9A84C", fontSize: 11, cursor: "pointer" }}>
+                          Edit
+                        </button>
+                        <button onClick={async () => {
+                          if (!confirm(`Delete persona "${p.name}"?`)) return;
+                          setDeletingPersonaSlug(p.slug);
+                          await fetch(`/api/marketing/personas/${p.slug}`, { method: "DELETE" });
+                          setDeletingPersonaSlug(null);
+                          await fetchPersonas();
+                          showToast("Persona deleted");
+                        }} disabled={deletingPersonaSlug === p.slug}
+                          style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "5px 10px", color: "#C94C4C", fontSize: 11, cursor: "pointer" }}>
+                          {deletingPersonaSlug === p.slug ? "..." : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         )}
@@ -1320,12 +1594,54 @@ export default function MarketingAgentDashboard() {
               {savingSettings ? "Saving..." : "Save Settings"}
             </button>
 
+            {/* Test Resend */}
+            <div style={{ marginTop: 16, padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#555", marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Test Email Sending</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  type="email"
+                  placeholder="your@email.com"
+                  value={testEmailTo}
+                  onChange={e => { setTestEmailTo(e.target.value); setTestEmailResult(null); }}
+                  style={{ ...fieldStyle, flex: 1 }}
+                />
+                <button
+                  onClick={async () => {
+                    if (!testEmailTo.trim()) return;
+                    setTestingEmail(true);
+                    setTestEmailResult(null);
+                    try {
+                      const res = await fetch("/api/marketing/test-email", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ to: testEmailTo.trim() }),
+                      });
+                      const data = await res.json();
+                      setTestEmailResult(res.ok ? { ok: true } : { ok: false, error: data.error });
+                    } finally {
+                      setTestingEmail(false);
+                    }
+                  }}
+                  disabled={testingEmail || !testEmailTo.trim()}
+                  style={{ padding: "7px 14px", background: testingEmail ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 6, color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: testingEmail ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                  {testingEmail ? "Sending..." : "Send Test"}
+                </button>
+              </div>
+              {testEmailResult && (
+                <div style={{ marginTop: 8, fontSize: 12, color: testEmailResult.ok ? "#4CC98E" : "#C94C4C" }}>
+                  {testEmailResult.ok ? "✓ Delivered — Resend is configured correctly" : `✗ ${testEmailResult.error}`}
+                </div>
+              )}
+            </div>
+
             <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: "#555", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>API Keys — set in .env file</div>
               {["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "RESEND_API_KEY"].map(k => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                   <span style={{ fontSize: 11, fontFamily: "monospace", color: "#666" }}>{k}</span>
-                  <span style={{ fontSize: 11, color: "#666" }}>—</span>
+                  <span style={{ fontSize: 11, color: resendConfigured && k === "RESEND_API_KEY" ? "#4CC98E" : "#666" }}>
+                    {resendConfigured && k === "RESEND_API_KEY" ? "✓ set" : "—"}
+                  </span>
                 </div>
               ))}
             </div>

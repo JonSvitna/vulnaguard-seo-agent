@@ -8,7 +8,7 @@ export async function GET() {
     );
     const config: Record<string, string> = {};
     for (const row of rows) config[row.key] = row.value;
-    return NextResponse.json({ config });
+    return NextResponse.json({ config, resend_configured: !!process.env.RESEND_API_KEY });
   } catch (err) {
     console.error("[marketing/config GET]", err);
     return NextResponse.json({ error: "Failed to load config" }, { status: 500 });

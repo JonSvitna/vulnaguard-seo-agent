@@ -3,7 +3,7 @@ import { runContentPipelineAgent } from "../agents/content-pipeline";
 import type { ContentPipelineInput, ContentPipelineRecord } from "../agents/content-pipeline/types";
 
 export async function runContentPipeline(
-  input: ContentPipelineInput
+  input: ContentPipelineInput & { voiceSkillSlug?: string | null }
 ): Promise<ContentPipelineRecord> {
   // 1. Run the agent
   const generated = await runContentPipelineAgent(input);

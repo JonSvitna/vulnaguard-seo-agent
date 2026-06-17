@@ -44,5 +44,6 @@ export interface ContentPipelineRecord {
   youtube_short: string;
   video_brief: VideoBrief;
   video_script: string | null;
+  hyperframes_prompt: string | null;
   created_at: Date;
 }

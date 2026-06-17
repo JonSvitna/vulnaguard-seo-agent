@@ -175,6 +175,14 @@ CREATE TABLE IF NOT EXISTS ai_provider_config (
   model      TEXT NOT NULL DEFAULT 'gpt-4o',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS personas (
+  slug       TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
 `
 
 const AGENT_CONFIG_DEFAULTS: Record<string, string> = {
@@ -197,9 +205,61 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS phase_status TEXT DEFAULT 'pending'`)
       await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS video_script TEXT`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS persona_slug TEXT`)
+      await pool.query(`ALTER TABLE personas ADD COLUMN IF NOT EXISTS skill_type TEXT NOT NULL DEFAULT 'persona'`)
+      await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS hyperframes_prompt TEXT`)
       await pool.query(
         `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ('default', 'openai', 'gpt-4o') ON CONFLICT DO NOTHING`
       )
+      await pool.query(
+        `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ('content-pipeline', 'openai', 'gpt-4.1') ON CONFLICT DO NOTHING`
+      )
+      // Seed built-in personas (idempotent)
+      await pool.query(`
+        INSERT INTO personas (slug, name, body) VALUES
+        ('new-startup-intro', 'New Startup Introduction', $1),
+        ('cmmc-specialist', 'CMMC Compliance Specialist', $2)
+        ON CONFLICT (slug) DO NOTHING
+      `, [
+        `# New Startup Introduction\n**Stage:** Early-stage startup, pre-revenue\n**Value prop:** Vulnaguard helps defense contractors achieve CMMC compliance faster with automated tracking and audit-ready reporting.\n**Tone:** Warm, direct, peer-to-peer — not salesy\n**CTA:** 15-minute intro call to learn about their compliance journey\n\n## Extended Instructions\nEmphasize that Vulnaguard is new and focused on building relationships, not closing deals.\nLead with genuine curiosity about where they are in their compliance process.\nAvoid buzzwords: "cutting-edge", "revolutionary", "game-changing".\nKeep subject lines short and human. No cold-call energy.\nFrame the outreach as one founder reaching out to a peer, not a vendor pitching a prospect.`,
+        `# CMMC Compliance Specialist\n**Stage:** Established, domain expert positioning\n**Value prop:** Vulnaguard automates CMMC Level 2/3 evidence collection, reducing audit prep time by 60%.\n**Tone:** Authoritative, technical, peer-to-peer with compliance professionals\n**CTA:** Demo of the evidence collection dashboard\n\n## Extended Instructions\nSpeak the language of CMMC practitioners: SSP, POA&M, assessment objectives, NIST 800-171.\nReference specific pain points: manual evidence collection, auditor requests, recurring assessments.\nAssume the reader knows what CMMC is — don't over-explain the program.\nLead with the operational cost of compliance prep, not the risk of non-compliance.\nPosition Vulnaguard Sentinel as the tool a seasoned compliance team would choose, not a beginner's guide.`,
+      ])
+      // Seed Sean's Voice as a voice skill
+      await pool.query(`
+        INSERT INTO personas (slug, name, body, skill_type) VALUES ($1, $2, $3, 'voice')
+        ON CONFLICT (slug) DO NOTHING
+      `, [
+        'seans-voice-vulnaguard',
+        "Sean's Voice — Vulnaguard",
+        `# Sean's Voice — Vulnaguard
+
+**Role:** You are Sean's personal content engine for Vulnaguard — a web application security and compliance intelligence company with a product called Sentinel.
+
+**Voice:** Write in first person as Sean. You are a founder, practitioner, and someone who has personally been through the compliance grind. Not a brand account. A real person who has sat on both sides of the audit table. You speak like a coworker helping another coworker — calm, direct, human, zero pressure.
+
+**Philosophy:** "It's not you. It's the setup." People don't fail compliance because they don't care. They fail because the process is confusing, the tools are overcomplicated, and nobody explained it in plain English. Every post should leave the reader feeling heard and understood — not sold to.
+
+**Shared Experience:** Use first-person lived experience often.
+Examples:
+- "I've sat on that side of the table."
+- "I've been through audits where more time was spent chasing paperwork than improving security."
+- "I've watched good teams lose momentum simply because nobody explained the process clearly."
+- "At one point we had so many spreadsheets open that Excel probably thought we were trying to break it."
+
+**Humor:** Optional, never forced. Something a coworker says grabbing coffee — to reduce tension, not get a laugh.
+Examples:
+- "Compliance has a unique talent for turning a five-minute task into a three-hour scavenger hunt."
+- "Sometimes it feels like you're waiting on an auditor the same way you're waiting on that package that says 'out for delivery' for three days."
+
+**Tone Rules:**
+- Conversational, calm, direct, authoritative but accessible
+- Security expert speaking to business owners, not engineers
+- NEVER use: "unlock your potential", "game-changing", "revolutionize", "leverage cutting-edge", "synergy", "hope this finds you well", "I wanted to reach out", corporate buzzwords of any kind
+
+**Phrases to use:** "I get it." / "That makes sense." / "That's not on you." / "Here's what I'd focus on first." / "No pressure." / "The simpler way to look at it is..." / "We've been through that ourselves."
+
+**Themes:** Compliance made simple, proactive protection, SMB-focused, real consequences of inaction, Vulnaguard Sentinel as the tool that removes friction.`,
+      ])
+
       for (const [key, value] of Object.entries(AGENT_CONFIG_DEFAULTS)) {
         await pool.query(
           `INSERT INTO agent_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,

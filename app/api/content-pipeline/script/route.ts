@@ -5,7 +5,7 @@ import { query } from "@/lib/db";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { recordId, brief, coreIdea, brand } = body;
+    const { recordId, brief, coreIdea, brand, voiceSkillSlug } = body;
 
     if (!brief?.hook || !brief?.points || !brief?.cta) {
       return NextResponse.json(
@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       brief,
       coreIdea: coreIdea ?? "",
       brand: brand ?? "vulnaguard",
+      voiceSkillSlug: voiceSkillSlug ?? null,
     });
 
     if (recordId) {

@@ -4,9 +4,13 @@ import { draftSequence } from "@/vulnaguard-marketing-agents/agents/outreach";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 import { qualifyAndUpdateLead } from "@/lib/marketing/qualify";
 
-export async function POST(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
+    const body = await req.json().catch(() => ({})) as {
+      persona_slug?: string | null;
+      force_qualify?: boolean;
+    };
 
     const leads = await query<OutreachLead>(`SELECT * FROM leads WHERE id = $1`, [id]);
     if (!leads.length) {
@@ -14,16 +18,64 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     }
     let lead = leads[0];
 
+    // Persist persona override if caller provided one
+    if ("persona_slug" in body) {
+      await query(`UPDATE leads SET persona_slug = $1, updated_at = NOW() WHERE id = $2`, [body.persona_slug ?? null, id]);
+      lead = { ...lead, persona_slug: body.persona_slug ?? null };
+    }
+
+    // Run qualification if needed
     if (lead.status === "discovered") {
       lead = await qualifyAndUpdateLead(lead);
     }
 
-    if (lead.status === "qualified") {
-      const draft = await draftSequence(lead, lead.persona_slug as string | null);
-      return NextResponse.json({ lead, draft });
+    // force_qualify overrides a disqualified result
+    if (body.force_qualify && lead.status === "disqualified") {
+      const rows = await query<OutreachLead>(
+        `UPDATE leads SET status = 'qualified', updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      lead = rows[0];
     }
 
-    return NextResponse.json({ lead, draft: null });
+    if (lead.status !== "qualified") {
+      return NextResponse.json({ lead, draft: null });
+    }
+
+    const personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
+    const draft = await draftSequence(lead, personaSlug);
+
+    // Auto-persist draft immediately — lead advances to 'drafted' regardless of whether
+    // the user clicks Save in the modal. Prevents silent loss on modal close.
+    await query(`DELETE FROM sequences WHERE lead_id = $1`, [id]);
+    const seqs = await query<{ id: number }>(
+      `INSERT INTO sequences (lead_id, status) VALUES ($1, 'drafted') RETURNING id`,
+      [id]
+    );
+    const seqId = seqs[0].id;
+
+    for (const e of draft.emails) {
+      await query(
+        `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status)
+         VALUES ($1, $2, $3, $4, $5, 'drafted')`,
+        [seqId, id, e.touch_number, e.subject, e.body]
+      );
+    }
+
+    if (draft.linkedin_message?.trim()) {
+      await query(
+        `INSERT INTO linkedin_messages (sequence_id, lead_id, message, status)
+         VALUES ($1, $2, $3, 'drafted')`,
+        [seqId, id, draft.linkedin_message]
+      );
+    }
+
+    const updated = await query<OutreachLead>(
+      `UPDATE leads SET status = 'drafted', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [id]
+    );
+
+    return NextResponse.json({ lead: updated[0], draft });
   } catch (err) {
     console.error("[marketing/leads/[id]/run-ai]", err);
     return NextResponse.json({ error: "AI run failed. Please try again." }, { status: 500 });
