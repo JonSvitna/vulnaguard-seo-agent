@@ -39,7 +39,7 @@ export async function POST() {
         qualified++
 
         try {
-          const draft = await draftSequence(updated, updated.persona_slug as string | null)
+          const draft = await draftSequence(updated, updated.persona_slug as string | null, null, updated.skill_slugs as string[] | null)
 
           // Delete any existing sequence, then insert new one
           await query(`DELETE FROM sequences WHERE lead_id = $1`, [lead.id])

@@ -11,6 +11,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       persona_slug?: string | null;
       force_qualify?: boolean;
       outreach_intent?: string | null;
+      skill_slugs?: string[] | null;
     };
 
     const leads = await query<OutreachLead>(`SELECT * FROM leads WHERE id = $1`, [id]);
@@ -27,6 +28,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if ("outreach_intent" in body) {
       await query(`UPDATE leads SET outreach_intent = $1, updated_at = NOW() WHERE id = $2`, [body.outreach_intent ?? null, id]);
       lead = { ...lead, outreach_intent: body.outreach_intent ?? null };
+    }
+    if ("skill_slugs" in body) {
+      await query(`UPDATE leads SET skill_slugs = $1, updated_at = NOW() WHERE id = $2`, [body.skill_slugs ?? [], id]);
+      lead = { ...lead, skill_slugs: body.skill_slugs ?? [] };
     }
 
     // Run qualification if needed
@@ -47,18 +52,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ lead, draft: null });
     }
 
-    let personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
+    const personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
     const outreachIntent = ("outreach_intent" in body ? body.outreach_intent : lead.outreach_intent) ?? null;
+    let skillSlugs = ("skill_slugs" in body ? body.skill_slugs : lead.skill_slugs) as string[] | null;
 
-    // Auto-inject default voice skill when no persona is explicitly selected
-    if (!personaSlug) {
+    // Fall back to Sean's voice when no skills are selected and no persona chosen
+    if (!personaSlug && (!skillSlugs || skillSlugs.length === 0)) {
       const defaultVoice = await query<{ slug: string }>(
         `SELECT slug FROM personas WHERE slug = 'seans-voice-vulnaguard' AND skill_type = 'voice' LIMIT 1`
       );
-      if (defaultVoice.length) personaSlug = defaultVoice[0].slug;
+      if (defaultVoice.length) skillSlugs = [defaultVoice[0].slug];
     }
 
-    const draft = await draftSequence(lead, personaSlug, outreachIntent);
+    const draft = await draftSequence(lead, personaSlug, outreachIntent, skillSlugs);
 
     // Auto-persist draft immediately — lead advances to 'drafted' regardless of whether
     // the user clicks Save in the modal. Prevents silent loss on modal close.

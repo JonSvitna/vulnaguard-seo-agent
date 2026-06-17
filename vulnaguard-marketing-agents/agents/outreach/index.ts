@@ -66,16 +66,30 @@ export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> 
   return { score: parsed.score, score_reason: parsed.score_reason };
 }
 
-export async function draftSequence(lead: OutreachLead, personaSlug?: string | null, outreachIntent?: string | null): Promise<CopywriterResult> {
+export async function draftSequence(lead: OutreachLead, personaSlug?: string | null, outreachIntent?: string | null, skillSlugs?: string[] | null): Promise<CopywriterResult> {
   let systemPrompt = COPYWRITER_PROMPT;
 
+  // Stack voice skills above the base prompt
+  const slugsToLoad = skillSlugs?.filter(Boolean) ?? [];
+  if (slugsToLoad.length) {
+    const rows = await query<{ slug: string; name: string; body: string }>(
+      `SELECT slug, name, body FROM personas WHERE slug = ANY($1) AND skill_type = 'voice'`,
+      [slugsToLoad]
+    );
+    if (rows.length) {
+      const skillBlocks = rows.map(r => `## Voice Skill: ${r.name}\n\n${r.body}`).join("\n\n");
+      systemPrompt = `${skillBlocks}\n\n---\n\n${COPYWRITER_PROMPT}`;
+    }
+  }
+
+  // Sender persona wraps above the skills block
   if (personaSlug) {
     const rows = await query<{ body: string }>(
       `SELECT body FROM personas WHERE slug = $1`,
       [personaSlug]
     );
     if (rows.length) {
-      systemPrompt = `## Sender Persona\n\n${rows[0].body}\n\n---\n\n${COPYWRITER_PROMPT}`;
+      systemPrompt = `## Sender Persona\n\n${rows[0].body}\n\n---\n\n${systemPrompt}`;
     } else {
       console.warn(`[outreach] persona not found in DB: ${personaSlug}`);
     }
