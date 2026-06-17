@@ -47,8 +47,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ lead, draft: null });
     }
 
-    const personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
+    let personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
     const outreachIntent = ("outreach_intent" in body ? body.outreach_intent : lead.outreach_intent) ?? null;
+
+    // Auto-inject default voice skill when no persona is explicitly selected
+    if (!personaSlug) {
+      const defaultVoice = await query<{ slug: string }>(
+        `SELECT slug FROM personas WHERE slug = 'seans-voice-vulnaguard' AND skill_type = 'voice' LIMIT 1`
+      );
+      if (defaultVoice.length) personaSlug = defaultVoice[0].slug;
+    }
+
     const draft = await draftSequence(lead, personaSlug, outreachIntent);
 
     // Auto-persist draft immediately — lead advances to 'drafted' regardless of whether

@@ -280,14 +280,17 @@ function DraftModal({ lead, onClose, onDraft }: {
   onClose: () => void;
   onDraft: (personaSlug: string | null, outreachIntent: string | null) => Promise<void>;
 }) {
-  const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
+  const [allSkills, setAllSkills] = useState<{ slug: string; name: string; skill_type: string }[]>([]);
   const [selected, setSelected] = useState<string>(lead.persona_slug ?? "");
   const [intent, setIntent] = useState<string>(lead.outreach_intent ?? "");
   const [drafting, setDrafting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/marketing/personas").then(r => r.json()).then(d => setPersonas(d.personas ?? [])).catch(() => {});
+    fetch("/api/marketing/personas").then(r => r.json()).then(d => setAllSkills(d.personas ?? [])).catch(() => {});
   }, []);
+
+  const outreachPersonas = allSkills.filter(s => s.skill_type === "persona");
+  const voiceSkills = allSkills.filter(s => s.skill_type === "voice");
 
   const handleDraft = async () => {
     setDrafting(true);
@@ -310,10 +313,19 @@ function DraftModal({ lead, onClose, onDraft }: {
         rows={3}
         style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginBottom: 16 }}
       />
-      <label style={labelStyle}>Outreach Persona</label>
+      <label style={labelStyle}>Persona / Voice Skill</label>
       <select style={{ ...fieldStyle, marginBottom: 20 }} value={selected} onChange={e => setSelected(e.target.value)}>
-        <option value="">— None (use default voice) —</option>
-        {personas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+        <option value="">— None (auto voice) —</option>
+        {outreachPersonas.length > 0 && (
+          <optgroup label="Outreach Personas">
+            {outreachPersonas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+          </optgroup>
+        )}
+        {voiceSkills.length > 0 && (
+          <optgroup label="Voice Skills">
+            {voiceSkills.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
+          </optgroup>
+        )}
       </select>
       <button onClick={handleDraft} disabled={drafting}
         style={{ width: "100%", padding: "10px", background: drafting ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: drafting ? "not-allowed" : "pointer" }}>
@@ -538,6 +550,27 @@ function PersonaEditorModal({ persona, onClose, onSave }: {
   const [body, setBody] = useState(persona?.body ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [description, setDescription] = useState("");
+  const [aiWriting, setAiWriting] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  const writeWithAI = async () => {
+    if (!description.trim()) return;
+    setAiWriting(true);
+    setAiError(null);
+    try {
+      const res = await fetch("/api/marketing/personas/draft-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description, skill_type: "persona" }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setAiError(data.error ?? "AI write failed"); return; }
+      setBody(data.body);
+    } finally {
+      setAiWriting(false);
+    }
+  };
 
   const handleSave = async () => {
     if (!name.trim() || !body.trim()) return;
@@ -560,14 +593,32 @@ function PersonaEditorModal({ persona, onClose, onSave }: {
   return (
     <Modal title={persona ? `Edit — ${persona.name}` : "New Persona"} onClose={onClose} width={640}>
       <p style={{ fontSize: 12, color: "#666", margin: "0 0 14px" }}>
-        Personas shape how the AI writes your outreach — tone, angle, CTA, and talking points. Write in plain markdown.
+        Personas shape how the AI writes your outreach — tone, angle, CTA, and talking points. Write it yourself or describe your style and let AI draft it.
       </p>
+
+      {/* AI draft section */}
+      <div style={{ background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.2)", borderRadius: 8, padding: "12px 14px", marginBottom: 16 }}>
+        <label style={{ ...labelStyle, color: "#C9A84C" }}>Describe your style (AI will write the body)</label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="e.g. I'm a founder who's been through CMMC audits. Direct, no buzzwords. I talk like a coworker, not a salesperson. I lead with the problem, not the pitch."
+          rows={3}
+          style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginBottom: 8 }}
+        />
+        {aiError && <div style={{ color: "#C94C4C", fontSize: 11, marginBottom: 6 }}>{aiError}</div>}
+        <button onClick={writeWithAI} disabled={aiWriting || !description.trim()}
+          style={{ padding: "7px 16px", background: aiWriting ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: (aiWriting || !description.trim()) ? "not-allowed" : "pointer" }}>
+          {aiWriting ? "Writing..." : "Write with AI →"}
+        </button>
+      </div>
+
       {error && <div style={{ color: "#C94C4C", fontSize: 12, marginBottom: 10 }}>{error}</div>}
       <label style={labelStyle}>Persona Name</label>
       <input style={{ ...fieldStyle, marginBottom: 12 }} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. New Startup Introduction" />
       <label style={labelStyle}>Persona Body (Markdown)</label>
       <textarea
-        style={{ ...fieldStyle, minHeight: 320, fontFamily: "monospace", fontSize: 12, resize: "vertical", marginBottom: 14 }}
+        style={{ ...fieldStyle, minHeight: 280, fontFamily: "monospace", fontSize: 12, resize: "vertical", marginBottom: 14 }}
         value={body}
         onChange={e => setBody(e.target.value)}
         placeholder={`# My Persona\n**Stage:** ...\n**Value prop:** ...\n**Tone:** ...\n**CTA:** ...\n\n## Extended Instructions\n...`}
@@ -990,18 +1041,19 @@ export default function MarketingAgentDashboard() {
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "AI run failed", "#C94C4C"); return; }
 
-      await refreshAll();
-
       if (data.draft) {
+        // Open modal immediately — before refreshAll so React doesn't race the state update
         setSequenceModal({ leadId: lead.id, companyName: data.lead.company_name, currentPersonaSlug: personaSlug, initialDraft: data.draft });
       } else {
         const updated: Lead = data.lead;
         if (updated.status === "disqualified") {
-          showToast(`Disqualified (score ${updated.score}/10) — ${updated.score_reason ?? ""}`, "#C94C4C");
+          showToast(`Disqualified (score ${updated.score}/10) — use Requalify or Override & Draft to force a sequence.`, "#C94C4C");
         } else {
           showToast(`Lead is now ${updated.status}`);
         }
       }
+      // Refresh list in background after modal is already set
+      refreshAll().catch(() => {});
     } finally {
       setAiRunningId(null);
     }
@@ -1663,12 +1715,20 @@ export default function MarketingAgentDashboard() {
             </div>
 
             <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
-              <div style={{ fontSize: 11, color: "#555", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>API Keys — set in .env file</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: "0.05em" }}>API Keys — set in Railway env vars</div>
+                <button
+                  onClick={async () => { const r = await fetch("/api/marketing/config"); const d = await r.json(); if (d.resend_configured !== undefined) setResendConfigured(d.resend_configured); }}
+                  style={{ fontSize: 10, color: "#6B7A99", background: "none", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+                >
+                  Recheck
+                </button>
+              </div>
               {["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "RESEND_API_KEY"].map(k => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                   <span style={{ fontSize: 11, fontFamily: "monospace", color: "#666" }}>{k}</span>
-                  <span style={{ fontSize: 11, color: resendConfigured && k === "RESEND_API_KEY" ? "#4CC98E" : "#666" }}>
-                    {resendConfigured && k === "RESEND_API_KEY" ? "✓ set" : "—"}
+                  <span style={{ fontSize: 11, color: resendConfigured && k === "RESEND_API_KEY" ? "#4CC98E" : "#C94C4C" }}>
+                    {resendConfigured && k === "RESEND_API_KEY" ? "✓ set" : k === "RESEND_API_KEY" ? "✗ not found" : "—"}
                   </span>
                 </div>
               ))}
