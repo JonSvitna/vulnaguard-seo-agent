@@ -505,7 +505,7 @@ export default function MarketingAgentDashboard() {
   // Settings tab state
   const [settings, setSettings] = useState({
     qualifier_min_score: "6", daily_send_limit: "50", batch_size: "10",
-    smtp_host: "", smtp_from: "",
+    smtp_from: "",
   });
   const [savingSettings, setSavingSettings] = useState(false);
 
@@ -577,6 +577,52 @@ export default function MarketingAgentDashboard() {
     }
   };
 
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [sendingBatch, setSendingBatch] = useState(false);
+  const [sendingEmailId, setSendingEmailId] = useState<number | null>(null);
+
+  const runFullPipeline = async () => {
+    setPipelineRunning(true);
+    try {
+      const res = await fetch("/api/marketing/pipeline/run", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Pipeline failed", "#C94C4C"); return; }
+      if (data.processed === 0) { showToast("No discovered leads to process", "#C9A84C"); return; }
+      showToast(`Pipeline complete — ${data.drafted} drafted, ${data.disqualified} disqualified${data.errors ? `, ${data.errors} errors` : ""}`);
+      await refreshAll();
+    } finally {
+      setPipelineRunning(false);
+    }
+  };
+
+  const sendBatch = async () => {
+    setSendingBatch(true);
+    try {
+      const res = await fetch("/api/marketing/send-queue/send-batch", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Batch send failed", "#C94C4C"); return; }
+      if (data.total === 0) { showToast("No emails due right now", "#C9A84C"); return; }
+      showToast(`Sent ${data.sent}/${data.total} emails${data.failed ? ` (${data.failed} failed)` : ""}`);
+      await refreshAll();
+    } finally {
+      setSendingBatch(false);
+    }
+  };
+
+  const sendSingleEmail = async (item: QueueEmail) => {
+    setSendingEmailId(item.id);
+    try {
+      const res = await fetch(`/api/marketing/emails/${item.id}/send`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) { showToast(data.error ?? "Send failed", "#C94C4C"); return; }
+      setQueue(q => ({ ...q, due: q.due.filter(e => e.id !== item.id) }));
+      showToast(`Touch ${item.touch_number} sent to ${item.contact_email}`);
+      await refreshAll();
+    } finally {
+      setSendingEmailId(null);
+    }
+  };
+
   const showToast = (msg: string, color: string = "#4CC98E") => {
     setToast({ msg, color });
     setTimeout(() => setToast(null), 3500);
@@ -612,7 +658,7 @@ export default function MarketingAgentDashboard() {
       qualifier_min_score: config.qualifier_min_score ?? s.qualifier_min_score,
       daily_send_limit: config.daily_send_limit ?? s.daily_send_limit,
       batch_size: config.batch_size ?? s.batch_size,
-      smtp_host: config.smtp_host ?? s.smtp_host,
+
       smtp_from: config.smtp_from ?? s.smtp_from,
     }));
   }, []);
@@ -936,9 +982,17 @@ export default function MarketingAgentDashboard() {
         {tab === "queue" && (
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Send Queue</h2>
-            <p style={{ fontSize: 12, color: "#666", marginBottom: 20 }}>
-              Touches due now from approved sequences. Copy the email into your client, send it, then mark it sent.
-            </p>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
+                Touches due now from approved sequences. Send via Resend or copy to your email client.
+              </p>
+              {queue.due.length > 0 && (
+                <button onClick={sendBatch} disabled={sendingBatch}
+                  style={{ background: sendingBatch ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 6, padding: "7px 16px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: sendingBatch ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                  {sendingBatch ? "Sending..." : `Send All Due (${queue.due.length})`}
+                </button>
+              )}
+            </div>
 
             {queue.due.length === 0 && queue.upcoming.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
@@ -963,13 +1017,19 @@ export default function MarketingAgentDashboard() {
                             </span>
                             {item.contact_name && <span style={{ fontSize: 11, color: "#666" }}>{item.contact_name}</span>}
                           </div>
-                          <div style={{ display: "flex", gap: 6 }}>
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {item.contact_email && (
+                              <button onClick={() => sendSingleEmail(item)} disabled={sendingEmailId === item.id}
+                                style={{ background: sendingEmailId === item.id ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 5, padding: "5px 10px", color: "#0D0F14", fontSize: 11, fontWeight: 700, cursor: sendingEmailId === item.id ? "not-allowed" : "pointer" }}>
+                                {sendingEmailId === item.id ? "Sending..." : "Send via Resend"}
+                              </button>
+                            )}
                             <button onClick={() => copyEmail(item)}
                               style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "5px 10px", color: "#888", fontSize: 11, cursor: "pointer" }}>
-                              Copy Email
+                              Copy
                             </button>
                             <button onClick={() => markEmailSent(item)}
-                              style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 5, padding: "5px 10px", color: "#0D0F14", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 5, padding: "5px 10px", color: "#C9A84C", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                               Mark Sent
                             </button>
                           </div>
@@ -1095,21 +1155,26 @@ export default function MarketingAgentDashboard() {
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
-              {[
-                { label: "Full Pipeline", desc: "Scout → Qualify → Write → Await approval", color: "#C9A84C" },
-                { label: "Send Approved", desc: "Dispatch all approved sequences via SMTP", color: "#4CC98E" },
-              ].map(a => (
-                <div key={a.label} title="Automation ships in a future update — use manual lead entry for now"
-                  style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${a.color}33`, borderRadius: 10, padding: "18px", textAlign: "left", cursor: "not-allowed", opacity: 0.5, position: "relative" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: a.color }}>{a.label}</div>
-                    <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.05em", padding: "2px 6px", borderRadius: 3, background: "rgba(255,255,255,0.07)", color: "#888", border: "1px solid rgba(255,255,255,0.1)" }}>
-                      COMING SOON
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 12, color: "#666" }}>{a.desc}</div>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 10, padding: "18px" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#C9A84C", marginBottom: 4 }}>Full Pipeline</div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 14 }}>
+                  Qualifies all discovered leads and drafts sequences for the top fits. Processes up to {settings.batch_size} leads per run.
                 </div>
-              ))}
+                <button onClick={runFullPipeline} disabled={pipelineRunning}
+                  style={{ background: pipelineRunning ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "8px 18px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: pipelineRunning ? "not-allowed" : "pointer" }}>
+                  {pipelineRunning ? "Running..." : "Run Pipeline"}
+                </button>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 10, padding: "18px" }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: "#4CC98E", marginBottom: 4 }}>Send Approved</div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 14 }}>
+                  Sends all due emails in the queue via Resend. Requires <span style={{ fontFamily: "monospace", color: "#888" }}>RESEND_API_KEY</span> and a verified from address.
+                </div>
+                <button onClick={sendBatch} disabled={sendingBatch}
+                  style={{ background: sendingBatch ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 6, padding: "8px 18px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: sendingBatch ? "not-allowed" : "pointer" }}>
+                  {sendingBatch ? "Sending..." : "Send All Due"}
+                </button>
+              </div>
             </div>
 
             <div>
@@ -1237,8 +1302,7 @@ export default function MarketingAgentDashboard() {
               { label: "Min Qualification Score", key: "qualifier_min_score" as const, placeholder: "6" },
               { label: "Daily Send Limit", key: "daily_send_limit" as const, placeholder: "50" },
               { label: "Approval Batch Size", key: "batch_size" as const, placeholder: "10" },
-              { label: "SMTP Host", key: "smtp_host" as const, placeholder: "smtp.yourdomain.com" },
-              { label: "Sender Email", key: "smtp_from" as const, placeholder: "outreach@vulnaguard.com" },
+              { label: "From Address (Resend)", key: "smtp_from" as const, placeholder: "outreach@yourdomain.com" },
             ].map(setting => (
               <div key={setting.key} style={{ marginBottom: 14, padding: "14px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8 }}>
                 <div style={{ fontSize: 11, color: "#666", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>{setting.label}</div>
@@ -1258,7 +1322,7 @@ export default function MarketingAgentDashboard() {
 
             <div style={{ marginTop: 16, padding: "12px 16px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
               <div style={{ fontSize: 11, color: "#555", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.05em" }}>API Keys — set in .env file</div>
-              {["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "APIFY_API_KEY", "SMTP_PASSWORD"].map(k => (
+              {["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "RESEND_API_KEY"].map(k => (
                 <div key={k} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                   <span style={{ fontSize: 11, fontFamily: "monospace", color: "#666" }}>{k}</span>
                   <span style={{ fontSize: 11, color: "#666" }}>—</span>
