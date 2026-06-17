@@ -30,8 +30,8 @@ export async function POST(req: NextRequest) {
     const rows = await query(
       `INSERT INTO leads
          (company_name, website, location, org_type, cmmc_level_sought, employee_count,
-          contact_name, contact_title, contact_email, contact_linkedin, source, status, score, score_reason)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          contact_name, contact_title, contact_email, contact_linkedin, source, status, score, score_reason, category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
        RETURNING *`,
       [
         body.company_name.trim(),
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
         body.status ?? "discovered",
         body.score ?? 0,
         body.score_reason ?? null,
+        body.category ?? "sales",
       ]
     );
 

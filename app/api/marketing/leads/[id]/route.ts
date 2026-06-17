@@ -18,6 +18,8 @@ const EDITABLE_FIELDS = [
   "score_reason",
   "persona_slug",
   "outreach_intent",
+  "category",
+  "skill_slugs",
 ];
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -69,6 +71,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const fields = Object.keys(body).filter((k) => EDITABLE_FIELDS.includes(k));
     if (fields.length === 0) {
       return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
+    }
+
+    // Changing category invalidates the existing score, which was computed against
+    // a different rubric — route the lead back through discovered for re-qualification.
+    if ("category" in body) {
+      const current = await query<{ category: string }>(`SELECT category FROM leads WHERE id = $1`, [id]);
+      if (current.length && current[0].category !== body.category) {
+        if (!fields.includes("status")) fields.push("status");
+        if (!fields.includes("score")) fields.push("score");
+        if (!fields.includes("score_reason")) fields.push("score_reason");
+        body.status = "discovered";
+        body.score = 0;
+        body.score_reason = null;
+        if (!fields.includes("skill_slugs")) fields.push("skill_slugs");
+        body.skill_slugs = [];
+      }
     }
 
     const setClauses = fields.map((f, i) => `${f} = $${i + 1}`);

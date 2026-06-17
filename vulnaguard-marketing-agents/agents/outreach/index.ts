@@ -1,4 +1,4 @@
-import { QUALIFIER_PROMPT, COPYWRITER_PROMPT } from "./systemPrompts";
+import { QUALIFIER_PROMPTS, COPYWRITER_PROMPT, CATEGORY_CONTEXT } from "./systemPrompts";
 import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import { query } from "@/lib/db";
 import type { OutreachLead, QualifierResult, CopywriterResult } from "./types";
@@ -55,7 +55,8 @@ async function callAI(agentName: string, system: string, userContent: string, ma
 }
 
 export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> {
-  const raw = await callAI('qualifier', QUALIFIER_PROMPT, `Lead profile:\n\n${leadProfile(lead)}`, 500);
+  const prompt = QUALIFIER_PROMPTS[lead.category ?? "sales"] ?? QUALIFIER_PROMPTS.sales;
+  const raw = await callAI('qualifier', prompt, `Lead profile:\n\n${leadProfile(lead)}`, 500);
   const parsed = parseJson(raw) as Partial<QualifierResult>;
 
   if (typeof parsed.score !== "number" || typeof parsed.score_reason !== "string") {
@@ -65,25 +66,41 @@ export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> 
   return { score: parsed.score, score_reason: parsed.score_reason };
 }
 
-export async function draftSequence(lead: OutreachLead, personaSlug?: string | null, outreachIntent?: string | null): Promise<CopywriterResult> {
+export async function draftSequence(lead: OutreachLead, personaSlug?: string | null, outreachIntent?: string | null, skillSlugs?: string[] | null): Promise<CopywriterResult> {
   let systemPrompt = COPYWRITER_PROMPT;
 
+  // Stack voice skills above the base prompt
+  const slugsToLoad = skillSlugs?.filter(Boolean) ?? [];
+  if (slugsToLoad.length) {
+    const rows = await query<{ slug: string; name: string; body: string }>(
+      `SELECT slug, name, body FROM personas WHERE slug = ANY($1) AND skill_type = 'voice'`,
+      [slugsToLoad]
+    );
+    if (rows.length) {
+      const skillBlocks = rows.map(r => `## Voice Skill: ${r.name}\n\n${r.body}`).join("\n\n");
+      systemPrompt = `${skillBlocks}\n\n---\n\n${COPYWRITER_PROMPT}`;
+    }
+  }
+
+  // Sender persona wraps above the skills block
   if (personaSlug) {
     const rows = await query<{ body: string }>(
       `SELECT body FROM personas WHERE slug = $1`,
       [personaSlug]
     );
     if (rows.length) {
-      systemPrompt = `## Sender Persona\n\n${rows[0].body}\n\n---\n\n${COPYWRITER_PROMPT}`;
+      systemPrompt = `## Sender Persona\n\n${rows[0].body}\n\n---\n\n${systemPrompt}`;
     } else {
       console.warn(`[outreach] persona not found in DB: ${personaSlug}`);
     }
   }
 
+  const categoryContext = lead.category ? CATEGORY_CONTEXT[lead.category] : undefined;
+  const categorySection = categoryContext ? `## Lead Category\n\n${categoryContext}\n\n` : "";
   const intentSection = outreachIntent?.trim()
     ? `## Outreach Goal\n\n${outreachIntent.trim()}\n\n`
     : "";
-  const userContent = `${intentSection}Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
+  const userContent = `${categorySection}${intentSection}Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
   const raw = await callAI('copywriter', systemPrompt, userContent, 4000);
   const parsed = parseJson(raw) as Partial<CopywriterResult>;
 

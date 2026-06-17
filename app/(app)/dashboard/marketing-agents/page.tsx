@@ -21,6 +21,8 @@ interface Lead {
   score_reason: string | null;
   persona_slug: string | null;
   outreach_intent: string | null;
+  category: string;
+  skill_slugs: string[];
   created_at: string;
   updated_at: string;
 }
@@ -121,6 +123,10 @@ function daysUntil(dateStr: string | null) {
 
 const TIERS = ["fast", "balanced", "powerful"];
 const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected"];
+const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral"];
+const CATEGORY_LABELS: Record<string, string> = {
+  sales: "Sales", partnership: "Partnership", relationship_building: "Relationship Building", referral: "Referral",
+};
 
 // ─── Small components ──────────────────────────────────────
 function StatCard({ label, value, color, sub }: any) {
@@ -276,12 +282,13 @@ const labelStyle: React.CSSProperties = { fontSize: 10, color: "#666", marginBot
 
 // ─── Draft / persona picker modal ─────────────────────────
 function DraftModal({ lead, onClose, onDraft }: {
-  lead: { id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string };
+  lead: { id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string; skill_slugs: string[] };
   onClose: () => void;
-  onDraft: (personaSlug: string | null, outreachIntent: string | null) => Promise<void>;
+  onDraft: (personaSlug: string | null, outreachIntent: string | null, skillSlugs: string[]) => Promise<void>;
 }) {
   const [allSkills, setAllSkills] = useState<{ slug: string; name: string; skill_type: string }[]>([]);
-  const [selected, setSelected] = useState<string>(lead.persona_slug ?? "");
+  const [selectedPersona, setSelectedPersona] = useState<string>(lead.persona_slug ?? "");
+  const [selectedSkills, setSelectedSkills] = useState<string[]>(lead.skill_slugs ?? []);
   const [intent, setIntent] = useState<string>(lead.outreach_intent ?? "");
   const [drafting, setDrafting] = useState(false);
 
@@ -292,9 +299,12 @@ function DraftModal({ lead, onClose, onDraft }: {
   const outreachPersonas = allSkills.filter(s => s.skill_type === "persona");
   const voiceSkills = allSkills.filter(s => s.skill_type === "voice");
 
+  const toggleSkill = (slug: string) =>
+    setSelectedSkills(prev => prev.includes(slug) ? prev.filter(s => s !== slug) : [...prev, slug]);
+
   const handleDraft = async () => {
     setDrafting(true);
-    try { await onDraft(selected || null, intent.trim() || null); }
+    try { await onDraft(selectedPersona || null, intent.trim() || null, selectedSkills); }
     finally { setDrafting(false); }
   };
 
@@ -313,20 +323,25 @@ function DraftModal({ lead, onClose, onDraft }: {
         rows={3}
         style={{ ...fieldStyle, resize: "vertical", fontFamily: "inherit", lineHeight: 1.5, marginBottom: 16 }}
       />
-      <label style={labelStyle}>Persona / Voice Skill</label>
-      <select style={{ ...fieldStyle, marginBottom: 20 }} value={selected} onChange={e => setSelected(e.target.value)}>
-        <option value="">— None (auto voice) —</option>
-        {outreachPersonas.length > 0 && (
-          <optgroup label="Outreach Personas">
-            {outreachPersonas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-          </optgroup>
-        )}
-        {voiceSkills.length > 0 && (
-          <optgroup label="Voice Skills">
-            {voiceSkills.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
-          </optgroup>
-        )}
+      <label style={labelStyle}>Outreach Persona</label>
+      <select style={{ ...fieldStyle, marginBottom: 16 }} value={selectedPersona} onChange={e => setSelectedPersona(e.target.value)}>
+        <option value="">— None —</option>
+        {outreachPersonas.map(p => <option key={p.slug} value={p.slug}>{p.name}</option>)}
       </select>
+      {voiceSkills.length > 0 && (
+        <>
+          <label style={labelStyle}>Voice Skills <span style={{ color: "#555", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(stack multiple — all apply to this draft)</span></label>
+          <div style={{ border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "8px 10px", marginBottom: 20, display: "flex", flexDirection: "column", gap: 6 }}>
+            {voiceSkills.map(s => (
+              <label key={s.slug} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 12, color: selectedSkills.includes(s.slug) ? "#C9A84C" : "#888" }}>
+                <input type="checkbox" checked={selectedSkills.includes(s.slug)} onChange={() => toggleSkill(s.slug)}
+                  style={{ accentColor: "#C9A84C", width: 14, height: 14 }} />
+                {s.name}
+              </label>
+            ))}
+          </div>
+        </>
+      )}
       <button onClick={handleDraft} disabled={drafting}
         style={{ width: "100%", padding: "10px", background: drafting ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: drafting ? "not-allowed" : "pointer" }}>
         {drafting ? "Drafting with AI..." : "Draft with AI"}
@@ -340,7 +355,7 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
   const [form, setForm] = useState<Partial<Lead>>(lead ?? {
     company_name: "", website: "", location: "", org_type: "", cmmc_level_sought: "",
     employee_count: "", contact_name: "", contact_title: "", contact_email: "", contact_linkedin: "",
-    status: "discovered", score: 0, persona_slug: null,
+    status: "discovered", score: 0, persona_slug: null, category: "sales",
   });
   const [saving, setSaving] = useState(false);
   const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
@@ -398,6 +413,12 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
         <div>
           <label style={labelStyle}>Score (0-10)</label>
           <input type="number" min={0} max={10} style={fieldStyle} value={form.score ?? 0} onChange={set("score")} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={labelStyle}>Category</label>
+          <select style={fieldStyle} value={form.category ?? "sales"} onChange={set("category")}>
+            {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+          </select>
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={labelStyle}>Outreach Persona</label>
@@ -541,10 +562,11 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, currentPersona
 }
 
 // ─── Persona editor modal ─────────────────────────────────
-function PersonaEditorModal({ persona, onClose, onSave }: {
+function PersonaEditorModal({ persona, onClose, onSave, skillType = "persona" }: {
   persona: { slug: string; name: string; body: string } | null;
   onClose: () => void;
   onSave: () => void;
+  skillType?: "persona" | "voice";
 }) {
   const [name, setName] = useState(persona?.name ?? "");
   const [body, setBody] = useState(persona?.body ?? "");
@@ -562,7 +584,7 @@ function PersonaEditorModal({ persona, onClose, onSave }: {
       const res = await fetch("/api/marketing/personas/draft-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description, skill_type: "persona" }),
+        body: JSON.stringify({ description, skill_type: skillType }),
       });
       const data = await res.json();
       if (!res.ok) { setAiError(data.error ?? "AI write failed"); return; }
@@ -580,7 +602,7 @@ function PersonaEditorModal({ persona, onClose, onSave }: {
       const res = await fetch("/api/marketing/personas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slug: persona?.slug, name, body }),
+        body: JSON.stringify({ slug: persona?.slug, name, body, skill_type: skillType }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Save failed"); return; }
@@ -591,9 +613,11 @@ function PersonaEditorModal({ persona, onClose, onSave }: {
   };
 
   return (
-    <Modal title={persona ? `Edit — ${persona.name}` : "New Persona"} onClose={onClose} width={640}>
+    <Modal title={persona ? `Edit — ${persona.name}` : skillType === "voice" ? "New Voice Skill" : "New Persona"} onClose={onClose} width={640}>
       <p style={{ fontSize: 12, color: "#666", margin: "0 0 14px" }}>
-        Personas shape how the AI writes your outreach — tone, angle, CTA, and talking points. Write it yourself or describe your style and let AI draft it.
+        {skillType === "voice"
+          ? "Voice skills shape how the AI writes — your tone, subject line style, phrases you use, things you'd never say. Stack multiple skills per draft."
+          : "Personas shape how the AI writes your outreach — tone, angle, CTA, and talking points. Write it yourself or describe your style and let AI draft it."}
       </p>
 
       {/* AI draft section */}
@@ -625,7 +649,7 @@ function PersonaEditorModal({ persona, onClose, onSave }: {
       />
       <button onClick={handleSave} disabled={saving || !name.trim() || !body.trim()}
         style={{ width: "100%", padding: "10px", background: (saving || !name.trim() || !body.trim()) ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: (saving || !name.trim() || !body.trim()) ? "not-allowed" : "pointer" }}>
-        {saving ? "Saving..." : persona ? "Save Changes" : "Create Persona"}
+        {saving ? "Saving..." : persona ? "Save Changes" : skillType === "voice" ? "Create Skill" : "Create Persona"}
       </button>
     </Modal>
   );
@@ -696,6 +720,7 @@ export default function MarketingAgentDashboard() {
   const [provider, setProvider] = useState("claude");
   const [tier, setTier] = useState("balanced");
   const [leadFilter, setLeadFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [leadSearch, setLeadSearch] = useState("");
   const [leadSelected, setLeadSelected] = useState<Set<number>>(new Set());
   const [leadSort, setLeadSort] = useState<{ key: LeadSortKey | null; direction: "asc" | "desc" | null }>({ key: null, direction: null });
@@ -725,18 +750,26 @@ export default function MarketingAgentDashboard() {
 
   // Personas tab state
   const [personasList, setPersonasList] = useState<{ slug: string; name: string; preview: string; body: string }[]>([]);
-  const [personaEditorModal, setPersonaEditorModal] = useState<{ persona: { slug: string; name: string; body: string } | null } | null>(null);
+  const [personaEditorModal, setPersonaEditorModal] = useState<{ persona: { slug: string; name: string; body: string } | null; skillType?: "persona" | "voice" } | null>(null);
   const [deletingPersonaSlug, setDeletingPersonaSlug] = useState<string | null>(null);
+
+  // Skills tab state
+  const [skillsList, setSkillsList] = useState<{ slug: string; name: string; preview: string; body: string }[]>([]);
+
+  // Leads pagination
+  const PAGE_SIZE = 25;
+  const [leadsPage, setLeadsPage] = useState(1);
 
   // Modal state
   const [leadModal, setLeadModal] = useState<{ mode: "add" | "edit"; lead: Lead | null } | null>(null);
   const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; currentPersonaSlug?: string | null; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
-  const [draftModal, setDraftModal] = useState<{ id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string } | null>(null);
+  const [draftModal, setDraftModal] = useState<{ id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string; skill_slugs: string[] } | null>(null);
   const [historyModal, setHistoryModal] = useState<{ leadId: number; companyName: string } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
   // Bulk import (Scout — text paste)
   const [importText, setImportText] = useState("");
+  const [importCategory, setImportCategory] = useState("sales");
   const [importing, setImporting] = useState(false);
 
   // CSV/Excel import
@@ -747,6 +780,7 @@ export default function MarketingAgentDashboard() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvPersona, setCsvPersona] = useState<string>("");
   const [csvPersonas, setCsvPersonas] = useState<{ slug: string; name: string }[]>([]);
+  const [csvCategory, setCsvCategory] = useState<string>("sales");
   const [csvParsing, setCsvParsing] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
 
@@ -785,12 +819,12 @@ export default function MarketingAgentDashboard() {
     try {
       const res = await fetch("/api/marketing/leads/import-confirm", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null }),
+        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null, category: csvCategory }),
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Import failed", "#C94C4C"); return; }
       showToast(`Imported ${data.imported} lead${data.imported === 1 ? "" : "s"} (${data.skipped_duplicates} skipped) — ${data.qualified} qualified`);
-      setCsvMapping(null); setCsvRows([]); setCsvPersona("");
+      setCsvMapping(null); setCsvRows([]); setCsvPersona(""); setCsvCategory("sales");
       await refreshAll();
     } finally {
       setCsvImporting(false);
@@ -890,10 +924,18 @@ export default function MarketingAgentDashboard() {
   }, []);
 
   const fetchPersonas = useCallback(async () => {
-    const res = await fetch("/api/marketing/personas");
+    const res = await fetch("/api/marketing/personas?type=persona");
     if (res.ok) {
       const data = await res.json();
       setPersonasList(data.personas ?? []);
+    }
+  }, []);
+
+  const fetchSkills = useCallback(async () => {
+    const res = await fetch("/api/marketing/personas?type=voice");
+    if (res.ok) {
+      const data = await res.json();
+      setSkillsList(data.personas ?? []);
     }
   }, []);
 
@@ -904,10 +946,10 @@ export default function MarketingAgentDashboard() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchConfig(), fetchPersonas()]);
+      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchConfig(), fetchPersonas(), fetchSkills()]);
       setLoading(false);
     })();
-  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchConfig, fetchPersonas]);
+  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchConfig, fetchPersonas, fetchSkills]);
 
   const toggleProvider = async (p: string) => {
     setProvider(p);
@@ -1024,7 +1066,7 @@ export default function MarketingAgentDashboard() {
   };
 
   const runAI = (lead: Lead) => {
-    setDraftModal({ id: lead.id, company_name: lead.company_name, persona_slug: lead.persona_slug, outreach_intent: lead.outreach_intent, status: lead.status });
+    setDraftModal({ id: lead.id, company_name: lead.company_name, persona_slug: lead.persona_slug, outreach_intent: lead.outreach_intent, status: lead.status, skill_slugs: lead.skill_slugs ?? [] });
   };
 
   const requalifyLead = async (lead: Lead) => {
@@ -1042,7 +1084,7 @@ export default function MarketingAgentDashboard() {
     }
   };
 
-  const executeDraft = async (lead: { id: number; company_name: string; status?: string }, personaSlug: string | null, outreachIntent: string | null) => {
+  const executeDraft = async (lead: { id: number; company_name: string; status?: string }, personaSlug: string | null, outreachIntent: string | null, skillSlugs: string[] = []) => {
     setDraftModal(null);
     setAiRunningId(lead.id);
     try {
@@ -1052,6 +1094,7 @@ export default function MarketingAgentDashboard() {
         body: JSON.stringify({
           persona_slug: personaSlug,
           outreach_intent: outreachIntent,
+          skill_slugs: skillSlugs,
           force_qualify: lead.status === "disqualified",
         }),
       });
@@ -1095,7 +1138,7 @@ export default function MarketingAgentDashboard() {
     try {
       const res = await fetch("/api/marketing/scout/import", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raw_text: importText }),
+        body: JSON.stringify({ raw_text: importText, category: importCategory }),
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Bulk import failed", "#C94C4C"); return; }
@@ -1126,10 +1169,15 @@ export default function MarketingAgentDashboard() {
     { id: "pipeline", label: "Pipeline", count: null },
     { id: "leads", label: "Leads", count: stats.total },
     { id: "personas", label: "Personas", count: personasList.length },
+    { id: "skills", label: "Skills", count: skillsList.length },
     { id: "settings", label: "Settings", count: null },
   ];
 
-  const filteredLeads = leadFilter === "all" ? leads : leads.filter(l => l.status === leadFilter);
+  const filteredLeads = leads.filter((lead) => {
+    if (leadFilter !== "all" && lead.status !== leadFilter) return false;
+    if (categoryFilter !== "all" && lead.category !== categoryFilter) return false;
+    return true;
+  });
 
   const getLeadSortValue = (lead: Lead, key: LeadSortKey): string | number => {
     if (key === "score") return lead.score;
@@ -1179,6 +1227,7 @@ export default function MarketingAgentDashboard() {
       lead.location,
       lead.contact_email,
       lead.persona_slug,
+      lead.category,
     ]
       .filter(Boolean)
       .join(" ")
@@ -1194,8 +1243,17 @@ export default function MarketingAgentDashboard() {
     return leadSort.direction === "asc" ? cmp : -cmp;
   });
 
-  const allVisibleSelected = visibleLeads.length > 0 && visibleLeads.every(l => leadSelected.has(l.id));
-  const someVisibleSelected = visibleLeads.some(l => leadSelected.has(l.id));
+  const totalPages = Math.max(1, Math.ceil(visibleLeads.length / PAGE_SIZE));
+  const normalizedLeadsPage = Math.min(leadsPage, totalPages);
+  const paginatedLeads = visibleLeads.slice((normalizedLeadsPage - 1) * PAGE_SIZE, normalizedLeadsPage * PAGE_SIZE);
+  const allVisibleSelected = paginatedLeads.length > 0 && paginatedLeads.every(l => leadSelected.has(l.id));
+  const someVisibleSelected = paginatedLeads.some(l => leadSelected.has(l.id));
+
+  useEffect(() => {
+    if (leadsPage !== normalizedLeadsPage) {
+      setLeadsPage(normalizedLeadsPage);
+    }
+  }, [leadsPage, normalizedLeadsPage]);
 
   return (
     <div style={{ background: "#0D0F14", minHeight: "100%", fontFamily: "'Inter', -apple-system, sans-serif", color: "#fff" }}>
@@ -1225,7 +1283,7 @@ export default function MarketingAgentDashboard() {
         <DraftModal
           lead={draftModal}
           onClose={() => setDraftModal(null)}
-          onDraft={(personaSlug, outreachIntent) => executeDraft(draftModal, personaSlug, outreachIntent)}
+          onDraft={(personaSlug, outreachIntent, skillSlugs) => executeDraft(draftModal, personaSlug, outreachIntent, skillSlugs)}
         />
       )}
       {historyModal && (
@@ -1238,8 +1296,13 @@ export default function MarketingAgentDashboard() {
       {personaEditorModal !== null && (
         <PersonaEditorModal
           persona={personaEditorModal.persona}
+          skillType={personaEditorModal.skillType ?? "persona"}
           onClose={() => setPersonaEditorModal(null)}
-          onSave={async () => { setPersonaEditorModal(null); await fetchPersonas(); showToast("Persona saved"); }}
+          onSave={async () => {
+            setPersonaEditorModal(null);
+            if (personaEditorModal.skillType === "voice") { await fetchSkills(); showToast("Skill saved"); }
+            else { await fetchPersonas(); showToast("Persona saved"); }
+          }}
         />
       )}
 
@@ -1467,6 +1530,12 @@ export default function MarketingAgentDashboard() {
                 placeholder="Paste company listings, directory text, or notes here..."
                 style={{ ...fieldStyle, minHeight: 120, fontFamily: "inherit", resize: "vertical", marginBottom: 10 }}
               />
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Category</label>
+                <select style={fieldStyle} value={importCategory} onChange={e => setImportCategory(e.target.value)}>
+                  {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                </select>
+              </div>
               <button onClick={runImport} disabled={importing || !importText.trim()}
                 style={{ background: importing || !importText.trim() ? "rgba(76,142,201,0.3)" : "linear-gradient(135deg, #4C8EC9, #2A4F7C)", border: "none", borderRadius: 6, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: importing || !importText.trim() ? "not-allowed" : "pointer" }}>
                 {importing ? "Importing..." : "Import Leads"}
@@ -1506,6 +1575,12 @@ export default function MarketingAgentDashboard() {
                         </select>
                       </div>
                     ))}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Category</label>
+                    <select style={fieldStyle} value={csvCategory} onChange={e => setCsvCategory(e.target.value)}>
+                      {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                    </select>
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <label style={labelStyle}>Outreach Persona (optional)</label>
@@ -1577,9 +1652,17 @@ export default function MarketingAgentDashboard() {
               <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", gap: 6 }}>
                   {["all", ...STATUS_OPTIONS].map(s => (
-                    <button key={s} onClick={() => setLeadFilter(s)}
+                    <button key={s} onClick={() => { setLeadFilter(s); setLeadsPage(1); }}
                       style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${leadFilter === s ? "rgba(201,168,76,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: leadFilter === s ? "rgba(201,168,76,0.1)" : "transparent", color: leadFilter === s ? "#C9A84C" : "#666", cursor: "pointer", textTransform: "capitalize" }}>
                       {s}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["all", ...CATEGORY_OPTIONS].map(c => (
+                    <button key={c} onClick={() => { setCategoryFilter(c); setLeadsPage(1); }}
+                      style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${categoryFilter === c ? "rgba(124,106,196,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: categoryFilter === c ? "rgba(124,106,196,0.1)" : "transparent", color: categoryFilter === c ? "#7C6AC4" : "#666", cursor: "pointer" }}>
+                      {c === "all" ? "all" : CATEGORY_LABELS[c]}
                     </button>
                   ))}
                 </div>
@@ -1631,14 +1714,14 @@ export default function MarketingAgentDashboard() {
                           if (allVisibleSelected) {
                             setLeadSelected(prev => {
                               const next = new Set(prev);
-                              for (const lead of visibleLeads) next.delete(lead.id);
+                              for (const lead of paginatedLeads) next.delete(lead.id);
                               return next;
                             });
                             return;
                           }
                           setLeadSelected(prev => {
                             const next = new Set(prev);
-                            for (const lead of visibleLeads) next.add(lead.id);
+                            for (const lead of paginatedLeads) next.add(lead.id);
                             return next;
                           });
                         }}
@@ -1646,14 +1729,14 @@ export default function MarketingAgentDashboard() {
                       />
                     </th>
                     {[
-                      { id: "company" as const, label: "Company", sortKey: "company_name" as const, resizable: true },
-                      { id: "status" as const, label: "Status", sortKey: "status" as const, resizable: true },
-                      { id: "score" as const, label: "Score", sortKey: "score" as const, resizable: true },
-                      { id: "cmmc" as const, label: "CMMC Level", sortKey: "cmmc_level_sought" as const, resizable: true },
-                      { id: "location" as const, label: "Location", sortKey: "location" as const, resizable: true },
-                      { id: "email" as const, label: "Email", sortKey: "contact_email" as const, resizable: true },
-                      { id: "persona" as const, label: "Persona", sortKey: "persona_slug" as const, resizable: true },
-                      { id: "actions" as const, label: "Actions", sortKey: null, resizable: true },
+                      { id: "company" as const, label: "Company", sortKey: "company_name" as const },
+                      { id: "status" as const, label: "Status", sortKey: "status" as const },
+                      { id: "score" as const, label: "Score", sortKey: "score" as const },
+                      { id: "cmmc" as const, label: "CMMC Level", sortKey: "cmmc_level_sought" as const },
+                      { id: "location" as const, label: "Location", sortKey: "location" as const },
+                      { id: "email" as const, label: "Email", sortKey: "contact_email" as const },
+                      { id: "persona" as const, label: "Persona", sortKey: "persona_slug" as const },
+                      { id: "actions" as const, label: "Actions", sortKey: null },
                     ].map(col => (
                       <th key={col.id} style={{ position: "relative", textAlign: "left", padding: "8px 12px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap", userSelect: "none" }}>
                         {col.sortKey ? (
@@ -1670,22 +1753,20 @@ export default function MarketingAgentDashboard() {
                         ) : (
                           col.label
                         )}
-                        {col.resizable && (
-                          <span
-                            onMouseDown={(ev) => {
-                              ev.preventDefault();
-                              setLeadResize({ column: col.id, startX: ev.clientX, startWidth: leadColWidths[col.id] });
-                            }}
-                            style={{ position: "absolute", top: 0, right: 0, width: 8, height: "100%", cursor: "col-resize" }}
-                            title="Drag to resize"
-                          />
-                        )}
+                        <span
+                          onMouseDown={(ev) => {
+                            ev.preventDefault();
+                            setLeadResize({ column: col.id, startX: ev.clientX, startWidth: leadColWidths[col.id] });
+                          }}
+                          style={{ position: "absolute", top: 0, right: 0, width: 8, height: "100%", cursor: "col-resize" }}
+                          title="Drag to resize"
+                        />
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleLeads.map(lead => (
+                  {paginatedLeads.map(lead => (
                     <tr key={lead.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                       <td style={{ padding: "10px 6px" }}>
                         <input
@@ -1759,6 +1840,19 @@ export default function MarketingAgentDashboard() {
               </table>
             </div>
             )}
+            {totalPages > 1 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, padding: "14px 0 4px", fontSize: 12, color: "#666" }}>
+                <button onClick={() => setLeadsPage(p => Math.max(1, p - 1))} disabled={leadsPage === 1}
+                  style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 10px", color: leadsPage === 1 ? "#333" : "#888", cursor: leadsPage === 1 ? "default" : "pointer", fontSize: 11 }}>
+                  ← Prev
+                </button>
+                <span>Page {leadsPage} of {totalPages}</span>
+                <button onClick={() => setLeadsPage(p => Math.min(totalPages, p + 1))} disabled={leadsPage === totalPages}
+                  style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 10px", color: leadsPage === totalPages ? "#333" : "#888", cursor: leadsPage === totalPages ? "default" : "pointer", fontSize: 11 }}>
+                  Next →
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1809,6 +1903,60 @@ export default function MarketingAgentDashboard() {
                         }} disabled={deletingPersonaSlug === p.slug}
                           style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "5px 10px", color: "#C94C4C", fontSize: 11, cursor: "pointer" }}>
                           {deletingPersonaSlug === p.slug ? "..." : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Skills ── */}
+        {tab === "skills" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Voice Skills</h2>
+                <p style={{ fontSize: 12, color: "#666", margin: 0 }}>Skills shape how the AI writes — your tone, subject line style, phrases you use, things you&apos;d never say. Stack multiple skills per draft.</p>
+              </div>
+              <button onClick={() => setPersonaEditorModal({ persona: null, skillType: "voice" })}
+                style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "8px 16px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                + New Skill
+              </button>
+            </div>
+            {skillsList.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>🎙</div>
+                <div style={{ fontSize: 14 }}>No voice skills yet</div>
+                <div style={{ fontSize: 12, marginTop: 6, color: "#333" }}>Create one to make your outreach sound like you, not an AI</div>
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: 12 }}>
+                {skillsList.map(s => (
+                  <div key={s.slug} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, background: "rgba(255,255,255,0.02)", padding: "16px 18px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{s.name}</span>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.1)", border: "1px solid rgba(124,106,196,0.2)", borderRadius: 3, padding: "1px 6px" }}>{s.slug}</span>
+                        </div>
+                        <p style={{ fontSize: 12, color: "#666", margin: 0, lineHeight: 1.6 }}>{s.preview}</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        <button onClick={() => setPersonaEditorModal({ persona: { slug: s.slug, name: s.name, body: s.body }, skillType: "voice" })}
+                          style={{ background: "rgba(201,168,76,0.1)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 5, padding: "5px 10px", color: "#C9A84C", fontSize: 11, cursor: "pointer" }}>
+                          Edit
+                        </button>
+                        <button onClick={async () => {
+                          if (!confirm(`Delete skill "${s.name}"?`)) return;
+                          await fetch(`/api/marketing/personas/${s.slug}`, { method: "DELETE" });
+                          await fetchSkills();
+                          showToast("Skill deleted");
+                        }}
+                          style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "5px 10px", color: "#C94C4C", fontSize: 11, cursor: "pointer" }}>
+                          Delete
                         </button>
                       </div>
                     </div>
@@ -1910,6 +2058,24 @@ export default function MarketingAgentDashboard() {
                   </span>
                 </div>
               ))}
+            </div>
+
+            <div style={{ marginTop: 24, padding: "14px 16px", background: "rgba(201,76,76,0.04)", border: "1px solid rgba(201,76,76,0.15)", borderRadius: 8 }}>
+              <div style={{ fontSize: 11, color: "#C94C4C", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Admin Actions</div>
+              <p style={{ fontSize: 12, color: "#666", margin: "0 0 10px" }}>Mark all current leads as Partnership category + Qualified status. Use once to tag government-sourced leads already in the system.</p>
+              <button onClick={async () => {
+                if (!confirm("This will update ALL leads to category=partnership and status=qualified. Continue?")) return;
+                const res = await fetch("/api/marketing/leads/bulk-update", {
+                  method: "POST", headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ set_category: "partnership", set_status: "qualified" }),
+                });
+                const data = await res.json();
+                if (res.ok) { showToast(`Updated ${data.updated} leads`); await fetchLeads(); }
+                else showToast(data.error ?? "Failed", "#C94C4C");
+              }}
+                style={{ padding: "7px 16px", background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 6, color: "#C94C4C", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                Mark All Leads: Partnership + Qualified
+              </button>
             </div>
           </div>
         )}
