@@ -12,7 +12,7 @@ Two existing fields look similar but don't solve this: `persona_slug` (who's sen
 
 ### Data model
 
-Add a `category` column to `leads`, a fixed enum with three values: `sales` (default — matches today's behavior exactly), `partnership`, `relationship_building`.
+Add a `category` column to `leads`, a fixed enum with four values: `sales` (default — matches today's behavior exactly), `partnership`, `relationship_building`, `referral`.
 
 ```sql
 ALTER TABLE leads ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'sales';
@@ -30,17 +30,20 @@ export const QUALIFIER_PROMPTS: Record<string, string> = {
   sales: QUALIFIER_PROMPT_SALES,           // today's existing rubric, verbatim
   partnership: QUALIFIER_PROMPT_PARTNERSHIP,
   relationship_building: QUALIFIER_PROMPT_RELATIONSHIP,
+  referral: QUALIFIER_PROMPT_REFERRAL,
 };
 export const CATEGORY_LABELS: Record<string, string> = {
   sales: "Sales",
   partnership: "Partnership",
   relationship_building: "Relationship Building",
+  referral: "Referral",
 };
 ```
 
 - **`sales`** — unchanged: CMMC level, employee count 50-500, defense-adjacent org type, named reachable contact.
 - **`partnership`** — score higher for complementary, non-competing service providers (MSPs, compliance consultants/auditors, IT integrators) that serve the same small/mid defense-subcontractor customer base and have an established client base worth referring or co-selling to. Score lower for direct competitors or companies with no overlapping customer base.
 - **`relationship_building`** — score higher for community presence and reachability: active LinkedIn, a title suggesting peer influence (association lead, frequent speaker/poster, community organizer) within the defense/compliance/security space. CMMC level and employee count carry little weight here — this is about staying visible in the right circles, not closing a deal.
+- **`referral`** — score higher for a wide professional network within the target industry (DoD primes, defense subcontractor community) who would encounter many potential Sentinel customers but don't need it themselves — e.g. independent consultants, conference/association organizers, well-connected individuals without a competing service of their own. Score lower if they already fit `sales` or `partnership` better (a direct prospect or a competing service provider isn't a referral source), or if they have a narrow/local network.
 
 `qualifyLead(lead)` (`vulnaguard-marketing-agents/agents/outreach/index.ts:57`) selects the rubric via `QUALIFIER_PROMPTS[lead.category ?? "sales"] ?? QUALIFIER_PROMPTS.sales`. No signature change — `qualifyAndUpdateLead` already passes the full lead row through `runAgent`, so `lead.category` is already present by the time it reaches `qualifyLead`.
 
@@ -50,8 +53,9 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 ```typescript
 const CATEGORY_CONTEXT: Record<string, string> = {
-  partnership: "This is a potential partner/referral relationship, not a direct sale. Frame outreach around collaboration and mutual client benefit, not a pitch to buy Sentinel.",
+  partnership: "This is a potential partner relationship, not a direct sale. Frame outreach around collaboration and mutual client benefit, not a pitch to buy Sentinel.",
   relationship_building: "This is relationship/community outreach — no ask, no CTA pressure. Focus on genuine connection and shared context, not a product pitch.",
+  referral: "This is a referral relationship — the goal is an introduction or visibility within their network, not a direct sale or partnership. Frame outreach around asking them to keep Sentinel in mind for people they encounter, not a pitch to buy or partner.",
 };
 ```
 
@@ -69,7 +73,7 @@ All three insert statements add `category` as a column with the selected value, 
 
 ### Lists / dashboard organization
 
-- New row of category filter tabs (`All / Sales / Partnership / Relationship Building`) on the Lead Pipeline section, next to the existing status filter tabs — same visual/interaction pattern as the `STATUS_OPTIONS` tabs (`leadFilter` state). New `categoryFilter` client state filters the already-fetched leads list; no new API endpoint needed.
+- New row of category filter tabs (`All / Sales / Partnership / Relationship Building / Referral`) on the Lead Pipeline section, next to the existing status filter tabs — same visual/interaction pattern as the `STATUS_OPTIONS` tabs (`leadFilter` state). New `categoryFilter` client state filters the already-fetched leads list; no new API endpoint needed.
 - Each lead card displays a category badge next to its existing status badge.
 
 ### Category change on an existing lead
@@ -113,7 +117,7 @@ Edit existing lead → change category
 
 ## Out of Scope
 
-- User-managed/custom category list (fixed 3-value enum for now)
+- User-managed/custom category list (fixed 4-value enum for now)
 - Category history/audit log
 - Bulk re-categorization of multiple leads at once
 - Changing the `qualifier_min_score` threshold per category (single global threshold stays in `agent_config`)
