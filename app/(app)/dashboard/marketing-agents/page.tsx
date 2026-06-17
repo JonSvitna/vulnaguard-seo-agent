@@ -21,6 +21,7 @@ interface Lead {
   score_reason: string | null;
   persona_slug: string | null;
   outreach_intent: string | null;
+  category: string;
   created_at: string;
   updated_at: string;
 }
@@ -121,6 +122,10 @@ function daysUntil(dateStr: string | null) {
 
 const TIERS = ["fast", "balanced", "powerful"];
 const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected"];
+const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral"];
+const CATEGORY_LABELS: Record<string, string> = {
+  sales: "Sales", partnership: "Partnership", relationship_building: "Relationship Building", referral: "Referral",
+};
 
 // ─── Small components ──────────────────────────────────────
 function StatCard({ label, value, color, sub }: any) {
@@ -340,7 +345,7 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
   const [form, setForm] = useState<Partial<Lead>>(lead ?? {
     company_name: "", website: "", location: "", org_type: "", cmmc_level_sought: "",
     employee_count: "", contact_name: "", contact_title: "", contact_email: "", contact_linkedin: "",
-    status: "discovered", score: 0, persona_slug: null,
+    status: "discovered", score: 0, persona_slug: null, category: "sales",
   });
   const [saving, setSaving] = useState(false);
   const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
@@ -398,6 +403,12 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
         <div>
           <label style={labelStyle}>Score (0-10)</label>
           <input type="number" min={0} max={10} style={fieldStyle} value={form.score ?? 0} onChange={set("score")} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={labelStyle}>Category</label>
+          <select style={fieldStyle} value={form.category ?? "sales"} onChange={set("category")}>
+            {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+          </select>
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={labelStyle}>Outreach Persona</label>
@@ -693,6 +704,7 @@ export default function MarketingAgentDashboard() {
   const [provider, setProvider] = useState("claude");
   const [tier, setTier] = useState("balanced");
   const [leadFilter, setLeadFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [loading, setLoading] = useState(true);
 
   // Settings tab state
@@ -720,6 +732,7 @@ export default function MarketingAgentDashboard() {
 
   // Bulk import (Scout — text paste)
   const [importText, setImportText] = useState("");
+  const [importCategory, setImportCategory] = useState("sales");
   const [importing, setImporting] = useState(false);
 
   // CSV/Excel import
@@ -730,6 +743,7 @@ export default function MarketingAgentDashboard() {
   const [csvRows, setCsvRows] = useState<CsvRow[]>([]);
   const [csvPersona, setCsvPersona] = useState<string>("");
   const [csvPersonas, setCsvPersonas] = useState<{ slug: string; name: string }[]>([]);
+  const [csvCategory, setCsvCategory] = useState<string>("sales");
   const [csvParsing, setCsvParsing] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
 
@@ -768,12 +782,12 @@ export default function MarketingAgentDashboard() {
     try {
       const res = await fetch("/api/marketing/leads/import-confirm", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null }),
+        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null, category: csvCategory }),
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Import failed", "#C94C4C"); return; }
       showToast(`Imported ${data.imported} lead${data.imported === 1 ? "" : "s"} (${data.skipped_duplicates} skipped) — ${data.qualified} qualified`);
-      setCsvMapping(null); setCsvRows([]); setCsvPersona("");
+      setCsvMapping(null); setCsvRows([]); setCsvPersona(""); setCsvCategory("sales");
       await refreshAll();
     } finally {
       setCsvImporting(false);
@@ -1078,7 +1092,7 @@ export default function MarketingAgentDashboard() {
     try {
       const res = await fetch("/api/marketing/scout/import", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ raw_text: importText }),
+        body: JSON.stringify({ raw_text: importText, category: importCategory }),
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Bulk import failed", "#C94C4C"); return; }
@@ -1112,7 +1126,9 @@ export default function MarketingAgentDashboard() {
     { id: "settings", label: "Settings", count: null },
   ];
 
-  const filteredLeads = leadFilter === "all" ? leads : leads.filter(l => l.status === leadFilter);
+  const filteredLeads = leads
+    .filter(l => leadFilter === "all" || l.status === leadFilter)
+    .filter(l => categoryFilter === "all" || l.category === categoryFilter);
 
   return (
     <div style={{ background: "#0D0F14", minHeight: "100%", fontFamily: "'Inter', -apple-system, sans-serif", color: "#fff" }}>
@@ -1384,6 +1400,12 @@ export default function MarketingAgentDashboard() {
                 placeholder="Paste company listings, directory text, or notes here..."
                 style={{ ...fieldStyle, minHeight: 120, fontFamily: "inherit", resize: "vertical", marginBottom: 10 }}
               />
+              <div style={{ marginBottom: 10 }}>
+                <label style={labelStyle}>Category</label>
+                <select style={fieldStyle} value={importCategory} onChange={e => setImportCategory(e.target.value)}>
+                  {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                </select>
+              </div>
               <button onClick={runImport} disabled={importing || !importText.trim()}
                 style={{ background: importing || !importText.trim() ? "rgba(76,142,201,0.3)" : "linear-gradient(135deg, #4C8EC9, #2A4F7C)", border: "none", borderRadius: 6, padding: "8px 16px", color: "#fff", fontSize: 12, fontWeight: 700, cursor: importing || !importText.trim() ? "not-allowed" : "pointer" }}>
                 {importing ? "Importing..." : "Import Leads"}
@@ -1423,6 +1445,12 @@ export default function MarketingAgentDashboard() {
                         </select>
                       </div>
                     ))}
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Category</label>
+                    <select style={fieldStyle} value={csvCategory} onChange={e => setCsvCategory(e.target.value)}>
+                      {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+                    </select>
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <label style={labelStyle}>Outreach Persona (optional)</label>
@@ -1500,6 +1528,14 @@ export default function MarketingAgentDashboard() {
                     </button>
                   ))}
                 </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["all", ...CATEGORY_OPTIONS].map(c => (
+                    <button key={c} onClick={() => setCategoryFilter(c)}
+                      style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${categoryFilter === c ? "rgba(124,106,196,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: categoryFilter === c ? "rgba(124,106,196,0.1)" : "transparent", color: categoryFilter === c ? "#7C6AC4" : "#666", cursor: "pointer" }}>
+                      {c === "all" ? "all" : CATEGORY_LABELS[c]}
+                    </button>
+                  ))}
+                </div>
                 <button onClick={() => setLeadModal({ mode: "add", lead: null })}
                   style={{ background: "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
                   + Add Lead
@@ -1514,7 +1550,7 @@ export default function MarketingAgentDashboard() {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr>
-                    {["Company", "Status", "Score", "CMMC Level", "Location", "Email", "Persona", "Actions"].map(h => (
+                    {["Company", "Status", "Category", "Score", "CMMC Level", "Location", "Email", "Persona", "Actions"].map(h => (
                       <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: "#555", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", fontSize: 10, letterSpacing: "0.05em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -1524,6 +1560,7 @@ export default function MarketingAgentDashboard() {
                     <tr key={lead.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                       <td style={{ padding: "10px 12px", color: "#ddd", fontWeight: 600 }}>{lead.company_name}</td>
                       <td style={{ padding: "10px 12px" }}><Badge label={lead.status} color={statusColor(lead.status)} /></td>
+                      <td style={{ padding: "10px 12px" }}><Badge label={CATEGORY_LABELS[lead.category] ?? lead.category} color="#7C6AC4" /></td>
                       <td style={{ padding: "10px 12px", fontFamily: "monospace", color: scoreColor(lead.score), fontWeight: 700 }}>{lead.score}/10</td>
                       <td style={{ padding: "10px 12px", color: "#888" }}>{lead.cmmc_level_sought || "—"}</td>
                       <td style={{ padding: "10px 12px", color: "#666" }}>{lead.location || "—"}</td>

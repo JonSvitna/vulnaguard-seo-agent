@@ -8,6 +8,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const rawText: string = body.raw_text ?? "";
+    const category: string = body.category ?? "sales";
 
     if (!rawText.trim()) {
       return NextResponse.json({ error: "raw_text is required" }, { status: 400 });
@@ -41,12 +42,13 @@ export async function POST(req: NextRequest) {
       const rows = await query<OutreachLead>(
         `INSERT INTO leads (company_name, website, location, org_type, cmmc_level_sought,
            employee_count, contact_name, contact_title, contact_email, contact_linkedin,
-           source, status, score)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'scout_import', 'discovered', 0)
+           source, status, score, category)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'scout_import', 'discovered', 0, $11)
          RETURNING *`,
         [
           lead.company_name, lead.website, lead.location, lead.org_type, lead.cmmc_level_sought,
           lead.employee_count, lead.contact_name, lead.contact_title, lead.contact_email, lead.contact_linkedin,
+          category,
         ]
       );
       inserted.push(rows[0]);
