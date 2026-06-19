@@ -1,24 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { SEO_SYSTEM_PROMPT } from '@/lib/config'
+import { getProviderForAgent } from '@/lib/ai-provider'
 
 type Provider = 'anthropic' | 'openai'
 
 export async function POST(req: NextRequest) {
-  const { messages, siteId, siteDomain, provider } = await req.json()
+  const { messages, siteId, siteDomain, provider, moduleId } = await req.json()
 
   const headerKey = req.headers.get('x-ai-key') || undefined
-  const anthropicKey = (provider === 'anthropic' ? headerKey : undefined) || process.env.ANTHROPIC_API_KEY
-  const openaiKey = (provider === 'openai' ? headerKey : undefined) || process.env.OPENAI_API_KEY
 
-  const activeProvider: Provider | null =
-    provider === 'openai' || provider === 'anthropic'
-      ? provider
-      : anthropicKey
-        ? 'anthropic'
-        : openaiKey
-          ? 'openai'
-          : null
+  // A module run (M1-M6) is configured per-module in Settings — that config
+  // dictates provider+model, overriding the dashboard's provider toggle.
+  // Plain chat (no moduleId) keeps the old toggle-driven behavior.
+  let activeProvider: Provider | null
+  let model: string
+  if (moduleId && moduleId >= 1 && moduleId <= 6) {
+    const config = await getProviderForAgent(`seo-m${moduleId}`)
+    activeProvider = config.provider === 'claude' ? 'anthropic' : 'openai'
+    model = config.model
+  } else {
+    activeProvider =
+      provider === 'openai' || provider === 'anthropic'
+        ? provider
+        : process.env.ANTHROPIC_API_KEY
+          ? 'anthropic'
+          : process.env.OPENAI_API_KEY
+            ? 'openai'
+            : null
+    model = activeProvider === 'anthropic' ? 'claude-haiku-4-5-20251001' : 'gpt-4.1'
+  }
+
+  const anthropicKey = (activeProvider === 'anthropic' ? headerKey : undefined) || process.env.ANTHROPIC_API_KEY
+  const openaiKey = (activeProvider === 'openai' ? headerKey : undefined) || process.env.OPENAI_API_KEY
 
   if (!activeProvider) {
     return NextResponse.json({ error: 'No AI provider configured. Set ANTHROPIC_API_KEY or OPENAI_API_KEY.' }, { status: 500 })
@@ -52,7 +66,7 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
     }
 
     const stream = await client.messages.stream({
-      model: 'claude-haiku-4-5-20251001',
+      model,
       max_tokens: 16000,
       system: systemPrompt,
       messages: cachedMessages,
@@ -97,7 +111,7 @@ CURRENT ACTIVE SITE: ${siteDomain || 'vulnaguard.com'} (${siteId || 'vulnaguard'
       Authorization: `Bearer ${openaiKey}`,
     },
     body: JSON.stringify({
-      model: 'gpt-4.1',
+      model,
       max_tokens: 16384,
       stream: true,
       messages: [{ role: 'system', content: systemPrompt }, ...trimmedMessages],

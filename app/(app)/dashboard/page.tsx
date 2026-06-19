@@ -388,7 +388,7 @@ export default function Dashboard() {
     }
   }, [activeSite, refreshSessionList])
 
-  const streamAgent = useCallback(async (userMessage: string, titleHint?: string) => {
+  const streamAgent = useCallback(async (userMessage: string, titleHint?: string, moduleId?: number) => {
     const { aiKey } = getStoredKeys()
     const userMsg: Message = { role: 'user', content: userMessage }
     stickToBottomRef.current = true
@@ -422,6 +422,7 @@ export default function Dashboard() {
           siteId: activeSite.id,
           siteDomain: activeSite.domain,
           provider,
+          moduleId,
         }),
       })
 
@@ -614,7 +615,7 @@ export default function Dashboard() {
       6: `Run M6 Pexels Images for the most recent page created in this session. Determine image count by post length, generate search queries, output complete <img> tags with alt text and attribution line.`,
     }
     const mod = MODULES[moduleId - 1]
-    streamAgent(prompts[moduleId], mod ? `${mod.code}: ${mod.label}` : undefined)
+    streamAgent(prompts[moduleId], mod ? `${mod.code}: ${mod.label}` : undefined, moduleId)
   }
 
   const handleSend = () => {

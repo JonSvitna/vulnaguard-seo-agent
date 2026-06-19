@@ -63,6 +63,12 @@ const AGENT_LABELS: Record<string, string> = {
   qualifier: 'Lead Qualifier',
   copywriter: 'Email Copywriter',
   'content-pipeline': 'Content Pipeline',
+  'seo-m1': 'SEO — M1 Research & Strategy',
+  'seo-m2': 'SEO — M2 Ranking Monitor',
+  'seo-m3': 'SEO — M3 On-Page Audit',
+  'seo-m4': 'SEO — M4 On-Page Executor',
+  'seo-m5': 'SEO — M5 Page Factory',
+  'seo-m6': 'SEO — M6 Images',
 }
 
 const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini']

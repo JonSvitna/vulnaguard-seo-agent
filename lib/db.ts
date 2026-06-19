@@ -235,6 +235,13 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(
         `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ('content-pipeline', 'openai', 'gpt-4.1') ON CONFLICT DO NOTHING`
       )
+      // SEO modules — each independently configurable in Settings, defaulting to Haiku for cost.
+      for (const m of ['seo-m1', 'seo-m2', 'seo-m3', 'seo-m4', 'seo-m5', 'seo-m6']) {
+        await pool.query(
+          `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ($1, 'claude', 'claude-haiku-4-5-20251001') ON CONFLICT DO NOTHING`,
+          [m]
+        )
+      }
       // Seed built-in personas (idempotent)
       await pool.query(`
         INSERT INTO personas (slug, name, body) VALUES
