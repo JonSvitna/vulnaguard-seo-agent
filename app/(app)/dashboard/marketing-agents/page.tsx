@@ -81,6 +81,20 @@ interface AgentRun {
   finished_at: string | null;
 }
 
+interface PromptRun {
+  id: number;
+  agent_name: string;
+  provider: string;
+  model: string;
+  system_prompt: string | null;
+  user_prompt: string | null;
+  response: string | null;
+  status: "success" | "error";
+  error: string | null;
+  duration_ms: number | null;
+  started_at: string;
+}
+
 interface Stats {
   discovered: number;
   qualified: number;
@@ -674,19 +688,52 @@ function describeRun(run: AgentRun): string {
   return `${run.agent_name} ${run.status}`;
 }
 
+function PromptRunRow({ prompt }: { prompt: PromptRun }) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div style={{ marginBottom: 10, padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div style={{ fontSize: 12, color: prompt.status === "success" ? "#ddd" : "#C94C4C" }}>
+          {prompt.agent_name} — <span style={{ color: "#4C8EC9" }}>{prompt.provider}/{prompt.model}</span>
+          {prompt.status === "error" && ` — failed: ${prompt.error ?? "unknown error"}`}
+        </div>
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{ fontSize: 11, color: "#4C8EC9", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          {expanded ? "Hide prompt" : "View prompt"}
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+        {new Date(prompt.started_at).toLocaleString()}
+        {prompt.duration_ms != null && ` · ${(prompt.duration_ms / 1000).toFixed(1)}s`}
+      </div>
+      {expanded && (
+        <div style={{ marginTop: 8, fontSize: 11, color: "#aaa", fontFamily: "monospace", whiteSpace: "pre-wrap", maxHeight: 240, overflowY: "auto", background: "rgba(0,0,0,0.25)", padding: 8, borderRadius: 6 }}>
+          {prompt.system_prompt && <><strong style={{ color: "#888" }}>System:</strong>{"\n"}{prompt.system_prompt}{"\n\n"}</>}
+          {prompt.user_prompt && <><strong style={{ color: "#888" }}>User:</strong>{"\n"}{prompt.user_prompt}{"\n\n"}</>}
+          {prompt.response && <><strong style={{ color: "#888" }}>Response:</strong>{"\n"}{prompt.response}</>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function LeadHistoryModal({ leadId, companyName, onClose }: { leadId: number; companyName: string; onClose: () => void }) {
   const [runs, setRuns] = useState<AgentRun[] | null>(null);
+  const [prompts, setPrompts] = useState<PromptRun[] | null>(null);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     fetch(`/api/marketing/leads/${leadId}/history`)
       .then(res => res.json())
-      .then(data => setRuns(data.runs))
+      .then(data => { setRuns(data.runs); setPrompts(data.prompts ?? []); })
       .catch(() => setError(true));
   }, [leadId]);
 
   return (
-    <Modal title={`History — ${companyName}`} onClose={onClose} width={480}>
+    <Modal title={`History — ${companyName}`} onClose={onClose} width={520}>
       {error ? (
         <div style={{ padding: "20px 0", textAlign: "center", color: "#C94C4C", fontSize: 12 }}>Failed to load history.</div>
       ) : runs === null ? (
@@ -694,12 +741,20 @@ function LeadHistoryModal({ leadId, companyName, onClose }: { leadId: number; co
       ) : runs.length === 0 ? (
         <div style={{ padding: "20px 0", textAlign: "center", color: "#555", fontSize: 12 }}>No AI activity yet for this lead.</div>
       ) : (
-        runs.map(run => (
-          <div key={run.id} style={{ marginBottom: 10, padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
-            <div style={{ fontSize: 12, color: run.status === "success" ? "#ddd" : "#C94C4C" }}>{describeRun(run)}</div>
-            <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(run.started_at).toLocaleString()}</div>
-          </div>
-        ))
+        <>
+          {runs.map(run => (
+            <div key={run.id} style={{ marginBottom: 10, padding: "10px 12px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+              <div style={{ fontSize: 12, color: run.status === "success" ? "#ddd" : "#C94C4C" }}>{describeRun(run)}</div>
+              <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>{new Date(run.started_at).toLocaleString()}</div>
+            </div>
+          ))}
+          {prompts && prompts.length > 0 && (
+            <>
+              <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", letterSpacing: 0.5, margin: "16px 0 8px" }}>Prompts sent</div>
+              {prompts.map(prompt => <PromptRunRow key={prompt.id} prompt={prompt} />)}
+            </>
+          )}
+        </>
       )}
     </Modal>
   );

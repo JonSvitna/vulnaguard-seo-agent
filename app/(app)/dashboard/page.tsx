@@ -579,8 +579,23 @@ export default function Dashboard() {
     }
   }
 
-  const handleModule = (moduleId: number) => {
+  const handleModule = async (moduleId: number) => {
     setActiveModule(moduleId)
+
+    let gscBlock = ''
+    if (moduleId === 2) {
+      try {
+        const res = await fetch(`/api/gsc?domain=${encodeURIComponent(activeSite.domain)}&days=90`)
+        const data = await res.json()
+        const rows = data.rows ?? []
+        gscBlock = data.mock
+          ? '\n\nNOTE: GSC credentials are not configured for this environment — no real ranking data is available. Tell the user to connect GSC instead of fabricating numbers.'
+          : `\n\nREAL GSC DATA (last 90 days, ${rows.length} queries):\n${JSON.stringify(rows, null, 2)}`
+      } catch {
+        gscBlock = '\n\nNOTE: The GSC data fetch failed. Tell the user the ranking data is unavailable instead of fabricating numbers.'
+      }
+    }
+
     const prompts: Record<number, string> = {
       1: `Run M1 Research & Strategy for ${activeSite.domain}. Primary topic: ${
         activeSite.id === 'vulnaguard' ? 'CMMC compliance software' :
@@ -588,7 +603,7 @@ export default function Dashboard() {
         activeSite.id === 'mectofitness' ? 'fitness coaching for busy adults' :
         'Baltimore real estate investment'
       }. Output full keyword strategy doc with medium-match targets only.`,
-      2: `Run M2 Ranking Monitor for ${activeSite.domain}. Pull GSC data, classify into Quick Wins, Declining, Indexing Gaps, Stable. Output full ranking opportunity report.`,
+      2: `Run M2 Ranking Monitor for ${activeSite.domain}. Classify the real GSC data provided below into Quick Wins (pos 6-20), Declining, Indexing Gaps, Stable. Output full ranking opportunity report based only on the real data — do not invent rows.${gscBlock}`,
       3: `Run M3 On-Page Auditor for the homepage of ${activeSite.domain}. Score all 9 elements and output specific recommendations for every failing element.`,
       4: `Run M4 On-Page Executor. Based on audit recommendations in this session, output all approved changes as exact replacement content ready to commit. Format for Next.js with generateMetadata() and JSON-LD schema.`,
       5: `Run M5 Page Factory for ${activeSite.domain}. Create one complete zipper pair: a fully optimized blog post + corresponding service page. Output as file blocks ready for GitHub. Check inventory first.${
@@ -880,9 +895,20 @@ export default function Dashboard() {
 
           {/* Full pass */}
           <button
-            onClick={() => {
+            onClick={async () => {
               setActiveModule(null)
-              streamAgent(`Run a Full SEO Pass for ${activeSite.domain}: M1 keyword research → M2 ranking monitor → M3 audit homepage. Present combined findings then wait for approval before M4/M5/M6.`, 'Full SEO Pass')
+              let gscBlock = ''
+              try {
+                const res = await fetch(`/api/gsc?domain=${encodeURIComponent(activeSite.domain)}&days=90`)
+                const data = await res.json()
+                const rows = data.rows ?? []
+                gscBlock = data.mock
+                  ? '\n\nNOTE: GSC credentials are not configured for this environment — no real ranking data is available for M2. Tell the user to connect GSC instead of fabricating numbers.'
+                  : `\n\nREAL GSC DATA for M2 (last 90 days, ${rows.length} queries):\n${JSON.stringify(rows, null, 2)}`
+              } catch {
+                gscBlock = '\n\nNOTE: The GSC data fetch failed. Tell the user the ranking data is unavailable for M2 instead of fabricating numbers.'
+              }
+              streamAgent(`Run a Full SEO Pass for ${activeSite.domain}: M1 keyword research → M2 ranking monitor (use only the real GSC data provided below, do not invent rows) → M3 audit homepage. Present combined findings then wait for approval before M4/M5/M6.${gscBlock}`, 'Full SEO Pass')
             }}
             disabled={loading}
             className="w-full py-2.5 text-xs font-bold text-[#C9A84C] bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-lg hover:bg-[#C9A84C]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"

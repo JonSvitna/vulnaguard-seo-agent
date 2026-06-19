@@ -25,38 +25,84 @@ function parseJson(raw: string): unknown {
   }
 }
 
-async function callAI(agentName: string, system: string, userContent: string, maxTokens: number): Promise<string> {
-  const config = await getProviderForAgent(agentName);
-
-  if (config.provider === 'openai') {
-    const client = makeOpenAIClient();
-    const res = await client.chat.completions.create({
-      model: config.model,
-      max_tokens: maxTokens,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: userContent },
+async function logPromptRun(args: {
+  agentName: string;
+  leadId: number | null;
+  provider: string;
+  model: string;
+  system: string;
+  userContent: string;
+  startedAt: Date;
+  response?: string;
+  status: "success" | "error";
+  error?: string;
+}): Promise<void> {
+  try {
+    await query(
+      `INSERT INTO prompt_runs (agent_name, lead_id, provider, model, system_prompt, user_prompt, response, status, error, duration_ms, started_at, finished_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+      [
+        args.agentName,
+        args.leadId,
+        args.provider,
+        args.model,
+        args.system,
+        args.userContent,
+        args.response ?? null,
+        args.status,
+        args.error ?? null,
+        Date.now() - args.startedAt.getTime(),
+        args.startedAt,
       ],
-    });
-    return res.choices[0]?.message?.content ?? '';
-  } else {
-    const client = makeAnthropicClient();
-    const message = await client.messages.create({
-      model: config.model,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userContent }],
-    });
-    return message.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join('');
+    );
+  } catch (err) {
+    console.error("[outreach] failed to log prompt_runs row", err);
+  }
+}
+
+async function callAI(agentName: string, system: string, userContent: string, maxTokens: number, leadId: number | null = null): Promise<string> {
+  const config = await getProviderForAgent(agentName);
+  const startedAt = new Date();
+
+  try {
+    let text: string;
+    if (config.provider === 'openai') {
+      const client = makeOpenAIClient();
+      const res = await client.chat.completions.create({
+        model: config.model,
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: userContent },
+        ],
+      });
+      text = res.choices[0]?.message?.content ?? '';
+    } else {
+      const client = makeAnthropicClient();
+      const message = await client.messages.create({
+        model: config.model,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: userContent }],
+      });
+      text = message.content
+        .filter((b) => b.type === 'text')
+        .map((b) => (b as { type: 'text'; text: string }).text)
+        .join('');
+    }
+
+    await logPromptRun({ agentName, leadId, provider: config.provider, model: config.model, system, userContent, startedAt, response: text, status: "success" });
+    return text;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "AI call failed";
+    await logPromptRun({ agentName, leadId, provider: config.provider, model: config.model, system, userContent, startedAt, status: "error", error: message });
+    throw err;
   }
 }
 
 export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> {
   const prompt = QUALIFIER_PROMPTS[lead.category ?? "sales"] ?? QUALIFIER_PROMPTS.sales;
-  const raw = await callAI('qualifier', prompt, `Lead profile:\n\n${leadProfile(lead)}`, 500);
+  const raw = await callAI('qualifier', prompt, `Lead profile:\n\n${leadProfile(lead)}`, 500, lead.id ?? null);
   const parsed = parseJson(raw) as Partial<QualifierResult>;
 
   if (typeof parsed.score !== "number" || typeof parsed.score_reason !== "string") {
@@ -101,7 +147,7 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
     ? `## Outreach Goal\n\n${outreachIntent.trim()}\n\n`
     : "";
   const userContent = `${categorySection}${intentSection}Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
-  const raw = await callAI('copywriter', systemPrompt, userContent, 4000);
+  const raw = await callAI('copywriter', systemPrompt, userContent, 4000, lead.id ?? null);
   const parsed = parseJson(raw) as Partial<CopywriterResult>;
 
   if (!Array.isArray(parsed.emails) || parsed.emails.length !== 3) {

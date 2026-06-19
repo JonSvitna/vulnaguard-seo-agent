@@ -12,6 +12,20 @@ interface AgentRun extends Record<string, unknown> {
   finished_at: string | null;
 }
 
+interface PromptRun extends Record<string, unknown> {
+  id: number;
+  agent_name: string;
+  provider: string;
+  model: string;
+  system_prompt: string | null;
+  user_prompt: string | null;
+  response: string | null;
+  status: "success" | "error";
+  error: string | null;
+  duration_ms: number | null;
+  started_at: string;
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
@@ -23,5 +37,13 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     [id]
   );
 
-  return NextResponse.json({ runs });
+  const prompts = await query<PromptRun>(
+    `SELECT id, agent_name, provider, model, system_prompt, user_prompt, response, status, error, duration_ms, started_at
+     FROM prompt_runs
+     WHERE lead_id = $1
+     ORDER BY started_at DESC`,
+    [id]
+  );
+
+  return NextResponse.json({ runs, prompts });
 }

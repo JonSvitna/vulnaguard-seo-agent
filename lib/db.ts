@@ -176,6 +176,24 @@ CREATE TABLE IF NOT EXISTS ai_provider_config (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS prompt_runs (
+  id SERIAL PRIMARY KEY,
+  agent_name TEXT NOT NULL,
+  lead_id INTEGER,
+  provider TEXT NOT NULL,
+  model TEXT NOT NULL,
+  system_prompt TEXT,
+  user_prompt TEXT,
+  response TEXT,
+  status TEXT NOT NULL,
+  error TEXT,
+  duration_ms INTEGER,
+  started_at TIMESTAMPTZ DEFAULT NOW(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_prompt_runs_lead_id ON prompt_runs (lead_id);
+CREATE INDEX IF NOT EXISTS idx_prompt_runs_started_at ON prompt_runs (started_at DESC);
+
 CREATE TABLE IF NOT EXISTS personas (
   slug       TEXT PRIMARY KEY,
   name       TEXT NOT NULL,
