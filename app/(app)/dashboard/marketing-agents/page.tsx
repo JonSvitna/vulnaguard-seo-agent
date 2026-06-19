@@ -62,6 +62,15 @@ interface QueueEmail {
   linkedin_message: string | null;
 }
 
+interface SentEmail {
+  id: number;
+  touch_number: number;
+  subject: string | null;
+  sent_at: string;
+  company_name: string;
+  contact_email: string | null;
+}
+
 interface PipelineRun {
   id: number;
   agent: string;
@@ -768,7 +777,7 @@ export default function MarketingAgentDashboard() {
   const [tab, setTab] = useState("approval");
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [pending, setPending] = useState<PendingSequence[]>([]);
-  const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[] }>({ due: [], upcoming: [] });
+  const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
@@ -1509,17 +1518,52 @@ export default function MarketingAgentDashboard() {
                 Go to <strong>Settings → API Keys</strong> to verify your key is set, then set a <strong>From Address</strong> in the Marketing section.
               </div>
             )}
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
               <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
                 Touches due now from approved sequences. Send via Resend or copy to your email client.
               </p>
               {queue.due.length > 0 && (
-                <button onClick={sendBatch} disabled={sendingBatch}
-                  style={{ background: sendingBatch ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 6, padding: "7px 16px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: sendingBatch ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                <button onClick={sendBatch} disabled={sendingBatch || queue.sentToday >= queue.dailyLimit}
+                  style={{ background: sendingBatch || queue.sentToday >= queue.dailyLimit ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2A7A56)", border: "none", borderRadius: 6, padding: "7px 16px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: sendingBatch || queue.sentToday >= queue.dailyLimit ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
                   {sendingBatch ? "Sending..." : `Send All Due (${queue.due.length})`}
                 </button>
               )}
             </div>
+
+            <div style={{ marginBottom: 20, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: "#888", letterSpacing: "0.05em", textTransform: "uppercase" }}>Sent today</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: queue.sentToday >= queue.dailyLimit ? "#C9A84C" : "#4CC98E" }}>
+                  {queue.sentToday} / {queue.dailyLimit}
+                </span>
+              </div>
+              <div style={{ height: 4, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", width: `${Math.min(100, (queue.sentToday / Math.max(1, queue.dailyLimit)) * 100)}%`, background: queue.sentToday >= queue.dailyLimit ? "#C9A84C" : "#4CC98E", transition: "width 0.3s" }} />
+              </div>
+              {queue.sentToday >= queue.dailyLimit && (
+                <div style={{ fontSize: 11, color: "#C9A84C", marginTop: 6 }}>Daily limit reached — remaining touches will send once the limit resets.</div>
+              )}
+            </div>
+
+            {queue.recentSent.length > 0 && (
+              <details style={{ marginBottom: 24 }}>
+                <summary style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer", marginBottom: 10 }}>
+                  Recently Sent ({queue.recentSent.length})
+                </summary>
+                <div style={{ marginTop: 10 }}>
+                  {queue.recentSent.map(item => (
+                    <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", padding: "8px 12px", borderBottom: "1px solid rgba(255,255,255,0.05)", fontSize: 12, gap: 12 }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <span style={{ color: "#fff", fontWeight: 600 }}>{item.company_name}</span>
+                        <span style={{ color: "#666" }}> — {item.subject}</span>
+                      </div>
+                      <span style={{ color: "#4CC98E", fontFamily: "monospace", fontSize: 10, flexShrink: 0 }}>Touch {item.touch_number}</span>
+                      <span style={{ color: "#666", fontSize: 11, flexShrink: 0, whiteSpace: "nowrap" }}>{new Date(item.sent_at).toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
 
             {queue.due.length === 0 && queue.upcoming.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
