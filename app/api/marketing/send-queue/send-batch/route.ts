@@ -70,7 +70,10 @@ export async function POST() {
     let failed = 0
     const errors: string[] = []
 
-    for (const email of claimed) {
+    for (const [i, email] of claimed.entries()) {
+      // Resend allows 5 requests/second — space sends out to stay under that.
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, 250))
+
       if (!email.subject || !email.body || !email.contact_email) {
         // Reset back to drafted so it can be retried
         await query(`UPDATE emails SET status = 'drafted' WHERE id = $1`, [email.id])
