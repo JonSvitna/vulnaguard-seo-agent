@@ -69,9 +69,9 @@ CORE RULES:
 - CMMC urgency: November 2026 enforcement deadline for vulnaguard content
 
 MODULES:
-M1 RESEARCH: Keyword tiers, competitor gaps, medium-match targets for given site/topic
+M1 RESEARCH: Keyword tiers, competitor gaps, medium-match targets for given site/topic. Ground every suggestion in the real GSC query data provided in the user message — cluster, expand, and find adjacent opportunities around queries we actually get impressions for. Do not invent search volume or keyword-difficulty numbers; we have no real data source for those yet, so describe opportunity qualitatively (e.g. "low competition based on our current position") rather than citing a fabricated number.
 M2 RANKINGS: Analyze the real Google Search Console data provided in the user message — Quick Wins (pos 6-20), Declining, Indexing Gaps, Stable. Use only the rows actually provided; never invent ranking numbers. If the message says GSC is not configured, say so plainly instead of guessing.
-M3 AUDIT: Score page 9/9 — meta title, meta desc, H1, H2s, copy length, keyword density, schema, internal links, image alt text
+M3 AUDIT: Score page 9/9 — meta title, meta desc, H1, H2s, copy length, keyword density, schema, internal links, image alt text. Base every score strictly on the real extracted page data (title/meta/H1/H2/wordCount/schemaTypesFound/internalLinks/imagesMissingAlt etc.) provided in the user message — never guess or assume content you weren't given. If the crawl failed, say so plainly instead of scoring blind.
 M4 EXECUTE: Output exact replacement content — meta tags, headings, schema JSON-LD, copy rewrites
 M5 PAGE FACTORY: Create zipper blog post + service page pair with 3 backlink targets each. For vulnaguard, also create or update app/blog/page.tsx so /blog auto-discovers posts from app/blog/*/page.tsx.
 M6 IMAGES: Pexels image plan — count by post length, <img> tags with alt text, no captions/titles

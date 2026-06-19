@@ -584,7 +584,7 @@ export default function Dashboard() {
     setActiveModule(moduleId)
 
     let gscBlock = ''
-    if (moduleId === 2) {
+    if (moduleId === 1 || moduleId === 2) {
       try {
         const res = await fetch(`/api/gsc?domain=${encodeURIComponent(activeSite.domain)}&days=90`)
         const data = await res.json()
@@ -597,15 +597,28 @@ export default function Dashboard() {
       }
     }
 
+    let auditBlock = ''
+    if (moduleId === 3) {
+      try {
+        const res = await fetch(`/api/seo-audit?url=${encodeURIComponent(`https://${activeSite.domain}`)}`)
+        const data = await res.json()
+        auditBlock = data.error
+          ? `\n\nNOTE: The page crawl failed (${data.error}). Tell the user the audit data is unavailable instead of guessing scores.`
+          : `\n\nREAL EXTRACTED PAGE DATA for ${data.url}:\n${JSON.stringify(data, null, 2)}`
+      } catch {
+        auditBlock = '\n\nNOTE: The page crawl failed. Tell the user the audit data is unavailable instead of guessing scores.'
+      }
+    }
+
     const prompts: Record<number, string> = {
       1: `Run M1 Research & Strategy for ${activeSite.domain}. Primary topic: ${
         activeSite.id === 'vulnaguard' ? 'CMMC compliance software' :
         activeSite.id === 'sentinel-cmmc' ? 'CMMC compliance for defense contractors' :
         activeSite.id === 'mectofitness' ? 'fitness coaching for busy adults' :
         'Baltimore real estate investment'
-      }. Output full keyword strategy doc with medium-match targets only.`,
+      }. Ground your keyword tiers and competitor-gap suggestions in the real GSC query data below — cluster and expand around queries we already get impressions for rather than inventing search volume/difficulty numbers from nothing. Output full keyword strategy doc with medium-match targets only.${gscBlock}`,
       2: `Run M2 Ranking Monitor for ${activeSite.domain}. Classify the real GSC data provided below into Quick Wins (pos 6-20), Declining, Indexing Gaps, Stable. Output full ranking opportunity report based only on the real data — do not invent rows.${gscBlock}`,
-      3: `Run M3 On-Page Auditor for the homepage of ${activeSite.domain}. Score all 9 elements and output specific recommendations for every failing element.`,
+      3: `Run M3 On-Page Auditor for the homepage of ${activeSite.domain}. Score all 9 elements using ONLY the real extracted page data provided below — do not guess or assume content you haven't been given. Output specific recommendations for every failing element.${auditBlock}`,
       4: `Run M4 On-Page Executor. Based on audit recommendations in this session, output all approved changes as exact replacement content ready to commit. Format for Next.js with generateMetadata() and JSON-LD schema.`,
       5: `Run M5 Page Factory for ${activeSite.domain}. Create one complete zipper pair: a fully optimized blog post + corresponding service page. Output as file blocks ready for GitHub. Check inventory first.${
         activeSite.id === 'vulnaguard'
@@ -909,7 +922,17 @@ export default function Dashboard() {
               } catch {
                 gscBlock = '\n\nNOTE: The GSC data fetch failed. Tell the user the ranking data is unavailable for M2 instead of fabricating numbers.'
               }
-              streamAgent(`Run a Full SEO Pass for ${activeSite.domain}: M1 keyword research → M2 ranking monitor (use only the real GSC data provided below, do not invent rows) → M3 audit homepage. Present combined findings then wait for approval before M4/M5/M6.${gscBlock}`, 'Full SEO Pass')
+              let auditBlock = ''
+              try {
+                const auditRes = await fetch(`/api/seo-audit?url=${encodeURIComponent(`https://${activeSite.domain}`)}`)
+                const auditData = await auditRes.json()
+                auditBlock = auditData.error
+                  ? `\n\nNOTE: The page crawl failed for M3 (${auditData.error}). Tell the user the audit data is unavailable instead of guessing scores.`
+                  : `\n\nREAL EXTRACTED PAGE DATA for M3, ${auditData.url}:\n${JSON.stringify(auditData, null, 2)}`
+              } catch {
+                auditBlock = '\n\nNOTE: The page crawl failed for M3. Tell the user the audit data is unavailable instead of guessing scores.'
+              }
+              streamAgent(`Run a Full SEO Pass for ${activeSite.domain}: M1 keyword research (ground tiers/gaps in the real GSC data below, don't invent volume/difficulty numbers) → M2 ranking monitor (use only the real GSC data provided below, do not invent rows) → M3 audit homepage (use ONLY the real extracted page data provided below, don't guess scores). Present combined findings then wait for approval before M4/M5/M6.${gscBlock}${auditBlock}`, 'Full SEO Pass')
             }}
             disabled={loading}
             className="w-full py-2.5 text-xs font-bold text-[#C9A84C] bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-lg hover:bg-[#C9A84C]/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
