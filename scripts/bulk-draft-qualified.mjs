@@ -25,6 +25,10 @@ const pool = new Pool({
   max: 5,
 });
 
+pool.on("error", (err) => {
+  console.error("[pool] idle client error (ignored, pool will reconnect):", err.message);
+});
+
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
