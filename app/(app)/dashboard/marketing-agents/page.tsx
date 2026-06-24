@@ -858,7 +858,7 @@ export default function MarketingAgentDashboard() {
 
   // Settings tab state
   const [settings, setSettings] = useState({
-    qualifier_min_score: "6", daily_send_limit: "50", batch_size: "10",
+    qualifier_min_score: "6", daily_send_limit: "100", batch_size: "10",
     smtp_from: "",
   });
   const [resendConfigured, setResendConfigured] = useState(true);
@@ -2399,7 +2399,7 @@ export default function MarketingAgentDashboard() {
 
             {[
               { label: "Min Qualification Score", key: "qualifier_min_score" as const, placeholder: "6" },
-              { label: "Daily Send Limit", key: "daily_send_limit" as const, placeholder: "50" },
+              { label: "Daily Send Limit", key: "daily_send_limit" as const, placeholder: "100" },
               { label: "Approval Batch Size", key: "batch_size" as const, placeholder: "10" },
               { label: "From Address (Resend)", key: "smtp_from" as const, placeholder: "outreach@yourdomain.com" },
             ].map(setting => (
