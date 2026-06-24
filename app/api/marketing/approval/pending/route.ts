@@ -12,6 +12,7 @@ interface SeqRow extends Record<string, unknown> {
   score: number;
   contact_name: string | null;
   contact_email: string | null;
+  business_line: string;
 }
 
 interface EmailRow extends Record<string, unknown> {
@@ -31,21 +32,36 @@ export async function GET(req: NextRequest) {
     const page = Math.max(1, Number(req.nextUrl.searchParams.get("page")) || 1);
     const limit = Math.min(200, Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 50));
     const offset = (page - 1) * limit;
+    const businessLine = req.nextUrl.searchParams.get("business_line");
+    const search = req.nextUrl.searchParams.get("search")?.trim();
+
+    const filters: string[] = ["s.status = 'drafted'"];
+    const params: unknown[] = [];
+    if (businessLine && businessLine !== "all") {
+      params.push(businessLine);
+      filters.push(`l.business_line = $${params.length}`);
+    }
+    if (search) {
+      params.push(`%${search}%`);
+      filters.push(`l.company_name ILIKE $${params.length}`);
+    }
+    const whereClause = filters.join(" AND ");
 
     const totalRows = await query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM sequences WHERE status = 'drafted'`
+      `SELECT COUNT(*)::text AS count FROM sequences s JOIN leads l ON l.id = s.lead_id WHERE ${whereClause}`,
+      params
     );
     const total = Number(totalRows[0]?.count) || 0;
 
     const sequences = await query<SeqRow>(
       `SELECT s.id, s.lead_id, s.status, s.created_at,
-              l.company_name, l.location, l.cmmc_level_sought, l.score, l.contact_name, l.contact_email
+              l.company_name, l.location, l.cmmc_level_sought, l.score, l.contact_name, l.contact_email, l.business_line
        FROM sequences s
        JOIN leads l ON l.id = s.lead_id
-       WHERE s.status = 'drafted'
+       WHERE ${whereClause}
        ORDER BY s.created_at ASC
-       LIMIT $1 OFFSET $2`,
-      [limit, offset]
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limit, offset]
     );
 
     const seqIds = sequences.map((s) => s.id);
@@ -78,6 +94,7 @@ export async function GET(req: NextRequest) {
       score: seq.score,
       contact_name: seq.contact_name,
       contact_email: seq.contact_email,
+      business_line: seq.business_line,
       created_at: seq.created_at,
       emails: emailsBySeq.get(seq.id) ?? [],
       linkedin_message: linkedinBySeq.get(seq.id) ?? "",

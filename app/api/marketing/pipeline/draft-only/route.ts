@@ -11,7 +11,7 @@ export async function POST(req: NextRequest) {
   try {
     await ensureSchema()
     const body = await req.json().catch(() => ({}))
-    const businessLine: string = body.business_line ?? 'website_design'
+    const businessLine: string = body.business_line ?? 'website_dev'
     const limit: number = Number(body.limit) || 100
 
     const leads = await query<OutreachLead>(

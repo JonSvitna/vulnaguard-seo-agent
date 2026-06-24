@@ -49,6 +49,7 @@ interface PendingSequence {
   score: number;
   contact_name: string | null;
   contact_email: string | null;
+  business_line: string;
   created_at: string;
   emails: PendingEmail[];
   linkedin_message: string;
@@ -828,6 +829,8 @@ export default function MarketingAgentDashboard() {
   const [pendingPage, setPendingPage] = useState(1);
   const [pendingTotal, setPendingTotal] = useState(0);
   const [pendingTotalPages, setPendingTotalPages] = useState(1);
+  const [pendingBusinessLine, setPendingBusinessLine] = useState("all");
+  const [pendingSearch, setPendingSearch] = useState("");
   const PENDING_PAGE_SIZE = 50;
   const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
   const [outreachStatus, setOutreachStatus] = useState<OutreachStatus>({ leads: [], upcoming3Days: [], recentlySent: [], bounced: [], pendingDeliverySync: 0 });
@@ -1058,14 +1061,17 @@ export default function MarketingAgentDashboard() {
   }, []);
 
   const fetchPending = useCallback(async () => {
-    const res = await fetch(`/api/marketing/approval/pending?page=${pendingPage}&limit=${PENDING_PAGE_SIZE}`);
+    const params = new URLSearchParams({ page: String(pendingPage), limit: String(PENDING_PAGE_SIZE) });
+    if (pendingBusinessLine !== "all") params.set("business_line", pendingBusinessLine);
+    if (pendingSearch.trim()) params.set("search", pendingSearch.trim());
+    const res = await fetch(`/api/marketing/approval/pending?${params.toString()}`);
     if (res.ok) {
       const data = await res.json();
       setPending(data.pending);
       setPendingTotal(data.total ?? 0);
       setPendingTotalPages(data.totalPages ?? 1);
     }
-  }, [pendingPage]);
+  }, [pendingPage, pendingBusinessLine, pendingSearch]);
 
   const fetchQueue = useCallback(async () => {
     const res = await fetch("/api/marketing/send-queue");
@@ -1565,7 +1571,7 @@ export default function MarketingAgentDashboard() {
         {/* ── Approval Queue ── */}
         {tab === "approval" && (
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
               <div>
                 <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Approval Queue</h2>
                 <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
@@ -1585,6 +1591,23 @@ export default function MarketingAgentDashboard() {
                   )}
                 </div>
               )}
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                {["all", ...BUSINESS_LINE_OPTIONS].map(b => (
+                  <button key={b} onClick={() => { setPendingBusinessLine(b); setPendingPage(1); }}
+                    style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${pendingBusinessLine === b ? "rgba(76,201,142,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: pendingBusinessLine === b ? "rgba(76,201,142,0.1)" : "transparent", color: pendingBusinessLine === b ? "#4CC98E" : "#666", cursor: "pointer" }}>
+                    {b === "all" ? "all lines" : BUSINESS_LINE_LABELS[b]}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={pendingSearch}
+                onChange={e => { setPendingSearch(e.target.value); setPendingPage(1); }}
+                placeholder="Filter by company name..."
+                style={{ ...fieldStyle, maxWidth: 320 }}
+              />
             </div>
 
             {pending.length === 0 ? (

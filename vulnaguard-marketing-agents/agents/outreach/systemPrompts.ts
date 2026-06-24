@@ -186,5 +186,5 @@ Respond ONLY with this JSON — no markdown fences, no preamble, no explanation:
 
 export const COPYWRITER_PROMPTS: Record<string, string> = {
   cmmc: COPYWRITER_PROMPT,
-  website_design: COPYWRITER_PROMPT_WEBSITE_DESIGN,
+  website_dev: COPYWRITER_PROMPT_WEBSITE_DESIGN,
 };
