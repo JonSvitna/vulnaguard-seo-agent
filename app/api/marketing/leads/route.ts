@@ -4,13 +4,17 @@ import { query } from "@/lib/db";
 export async function GET(req: NextRequest) {
   try {
     const status = req.nextUrl.searchParams.get("status");
+    const businessLine = req.nextUrl.searchParams.get("business_line");
 
-    const leads = status
-      ? await query(
-          `SELECT * FROM leads WHERE status = $1 ORDER BY updated_at DESC`,
-          [status]
-        )
-      : await query(`SELECT * FROM leads ORDER BY updated_at DESC`);
+    const conditions: string[] = [];
+    const params: string[] = [];
+    if (status) { params.push(status); conditions.push(`status = $${params.length}`); }
+    if (businessLine) { params.push(businessLine); conditions.push(`business_line = $${params.length}`); }
+
+    const leads = await query(
+      `SELECT * FROM leads ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""} ORDER BY updated_at DESC`,
+      params
+    );
 
     return NextResponse.json({ leads });
   } catch (err) {
@@ -30,8 +34,8 @@ export async function POST(req: NextRequest) {
     const rows = await query(
       `INSERT INTO leads
          (company_name, website, location, org_type, cmmc_level_sought, employee_count,
-          contact_name, contact_title, contact_email, contact_linkedin, source, status, score, score_reason, category)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+          contact_name, contact_title, contact_email, contact_linkedin, source, status, score, score_reason, category, business_line)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [
         body.company_name.trim(),
@@ -49,6 +53,7 @@ export async function POST(req: NextRequest) {
         body.score ?? 0,
         body.score_reason ?? null,
         body.category ?? "sales",
+        body.business_line ?? "cmmc",
       ]
     );
 

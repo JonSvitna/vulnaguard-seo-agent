@@ -17,6 +17,7 @@ export interface OutreachLead {
   persona_slug?: string | null;
   outreach_intent?: string | null;
   category?: string | null;
+  business_line?: string | null;
   skill_slugs?: string[] | null;
 }
 

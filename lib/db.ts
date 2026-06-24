@@ -229,6 +229,14 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'sales'`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS skill_slugs TEXT[] NOT NULL DEFAULT '{}'`)
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_leads_category ON leads (category)`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS business_line TEXT NOT NULL DEFAULT 'cmmc'`)
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_leads_business_line ON leads (business_line)`)
+      await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS resend_message_id TEXT`)
+      await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
+      await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`)
+      await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS bounce_reason TEXT`)
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_emails_resend_message_id ON emails (resend_message_id)`)
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_emails_scheduled_at ON emails (scheduled_at)`)
       await pool.query(
         `INSERT INTO ai_provider_config (agent_name, provider, model) VALUES ('default', 'openai', 'gpt-4o') ON CONFLICT DO NOTHING`
       )

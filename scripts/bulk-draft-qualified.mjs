@@ -23,6 +23,8 @@ const pool = new Pool({
     ? false
     : { rejectUnauthorized: false },
   max: 5,
+  connectionTimeoutMillis: 15_000,
+  idleTimeoutMillis: 30_000,
 });
 
 pool.on("error", (err) => {
@@ -127,12 +129,15 @@ async function draftSequence(pool, lead, defaultVoiceSlug) {
   const intentSection = lead.outreach_intent?.trim() ? `## Outreach Goal\n\n${lead.outreach_intent.trim()}\n\n` : "";
   const userContent = `${categorySection}${intentSection}Lead profile:\n\n${leadProfile(lead)}\n\nFit score: ${lead.score}/10\nFit reason: ${lead.score_reason ?? "n/a"}`;
 
-  const resp = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: 4000,
-    system: systemPrompt,
-    messages: [{ role: "user", content: userContent }],
-  });
+  const resp = await anthropic.messages.create(
+    {
+      model: MODEL,
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userContent }],
+    },
+    { timeout: 60_000 }
+  );
   const text = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("");
   const parsed = parseJson(text);
 

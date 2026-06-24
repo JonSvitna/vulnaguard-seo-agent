@@ -21,11 +21,12 @@ function applyMapping(row: RawRow, mapping: Mapping): Partial<Record<LeadField, 
 export async function POST(req: NextRequest) {
   try {
     await ensureSchema();
-    const { mapping, all_rows, persona_slug, category } = await req.json() as {
+    const { mapping, all_rows, persona_slug, category, business_line } = await req.json() as {
       mapping: Mapping;
       all_rows: RawRow[];
       persona_slug?: string | null;
       category?: string;
+      business_line?: string;
     };
 
     if (!mapping || !Array.isArray(all_rows)) {
@@ -49,8 +50,8 @@ export async function POST(req: NextRequest) {
         `INSERT INTO leads (
            company_name, website, location, org_type, cmmc_level_sought,
            employee_count, contact_name, contact_title, contact_email, contact_linkedin,
-           source, status, score, persona_slug, category
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'csv_import','discovered',0,$11,$12)
+           source, status, score, persona_slug, category, business_line
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'csv_import','discovered',0,$11,$12,$13)
          RETURNING *`,
         [
           fields.company_name, fields.website ?? null, fields.location ?? null,
@@ -58,13 +59,18 @@ export async function POST(req: NextRequest) {
           fields.employee_count ?? null, fields.contact_name ?? null,
           fields.contact_title ?? null, fields.contact_email ?? null,
           fields.contact_linkedin ?? null, persona_slug ?? null, category ?? "sales",
+          business_line ?? "cmmc",
         ]
       );
       inserted.push(rows[0]);
     }
 
+    // The qualifier's scoring rubrics are CMMC/Sentinel-specific — only auto-run it
+    // for that business line. Other lines (e.g. website_dev) stay 'discovered' until
+    // a dedicated rubric exists, rather than being scored against the wrong criteria.
     const qualified = await Promise.all(
       inserted.map(async (lead) => {
+        if ((lead.business_line ?? "cmmc") !== "cmmc") return lead;
         try { return await qualifyAndUpdateLead(lead); }
         catch (err) {
           console.error("[import-confirm] qualify failed for lead", lead.id, err);

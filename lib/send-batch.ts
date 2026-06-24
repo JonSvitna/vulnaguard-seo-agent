@@ -106,8 +106,8 @@ export async function runSendBatch(): Promise<SendBatchResult> {
     }
 
     await query(
-      `UPDATE emails SET status = 'sent', sent_at = NOW() WHERE id = $1`,
-      [email.id]
+      `UPDATE emails SET status = 'sent', sent_at = NOW(), resend_message_id = $2 WHERE id = $1`,
+      [email.id, result.id ?? null]
     )
 
     const remaining_in_seq = await query(

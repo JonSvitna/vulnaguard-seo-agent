@@ -22,10 +22,17 @@ interface Lead {
   persona_slug: string | null;
   outreach_intent: string | null;
   category: string;
+  business_line: string;
   skill_slugs: string[];
   created_at: string;
   updated_at: string;
 }
+
+const BUSINESS_LINE_OPTIONS = ["cmmc", "website_dev"];
+const BUSINESS_LINE_LABELS: Record<string, string> = {
+  cmmc: "Sentinel CMMC",
+  website_dev: "Website Dev",
+};
 
 interface PendingEmail {
   touch_number: number;
@@ -69,6 +76,38 @@ interface SentEmail {
   sent_at: string;
   company_name: string;
   contact_email: string | null;
+}
+
+interface OutreachTouch {
+  email_id: number;
+  lead_id: number;
+  company_name: string;
+  touch_number: number;
+  subject: string | null;
+  email_status: string;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  delivered_at: string | null;
+  bounced_at: string | null;
+  bounce_reason: string | null;
+}
+
+interface OutreachLeadStatus {
+  lead_id: number;
+  company_name: string;
+  contact_email: string | null;
+  category: string;
+  business_line: string;
+  sequence_status: string;
+  touches: Omit<OutreachTouch, "lead_id" | "company_name">[];
+}
+
+interface OutreachStatus {
+  leads: OutreachLeadStatus[];
+  upcoming3Days: OutreachTouch[];
+  recentlySent: OutreachTouch[];
+  bounced: OutreachTouch[];
+  pendingDeliverySync: number;
 }
 
 interface PipelineRun {
@@ -378,7 +417,7 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
   const [form, setForm] = useState<Partial<Lead>>(lead ?? {
     company_name: "", website: "", location: "", org_type: "", cmmc_level_sought: "",
     employee_count: "", contact_name: "", contact_title: "", contact_email: "", contact_linkedin: "",
-    status: "discovered", score: 0, persona_slug: null, category: "sales",
+    status: "discovered", score: 0, persona_slug: null, category: "sales", business_line: "cmmc",
   });
   const [saving, setSaving] = useState(false);
   const [personas, setPersonas] = useState<{ slug: string; name: string }[]>([]);
@@ -437,10 +476,16 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
           <label style={labelStyle}>Score (0-10)</label>
           <input type="number" min={0} max={10} style={fieldStyle} value={form.score ?? 0} onChange={set("score")} />
         </div>
-        <div style={{ gridColumn: "1 / -1" }}>
+        <div>
           <label style={labelStyle}>Category</label>
           <select style={fieldStyle} value={form.category ?? "sales"} onChange={set("category")}>
             {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={labelStyle}>Business Line</label>
+          <select style={fieldStyle} value={form.business_line ?? "cmmc"} onChange={set("business_line")}>
+            {BUSINESS_LINE_OPTIONS.map(b => <option key={b} value={b}>{BUSINESS_LINE_LABELS[b]}</option>)}
           </select>
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -778,6 +823,8 @@ export default function MarketingAgentDashboard() {
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [pending, setPending] = useState<PendingSequence[]>([]);
   const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
+  const [outreachStatus, setOutreachStatus] = useState<OutreachStatus>({ leads: [], upcoming3Days: [], recentlySent: [], bounced: [], pendingDeliverySync: 0 });
+  const [syncingResend, setSyncingResend] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
@@ -785,6 +832,7 @@ export default function MarketingAgentDashboard() {
   const [tier, setTier] = useState("balanced");
   const [leadFilter, setLeadFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [businessLineFilter, setBusinessLineFilter] = useState("all");
   const [leadSearch, setLeadSearch] = useState("");
   const [leadSelected, setLeadSelected] = useState<Set<number>>(new Set());
   const [leadSort, setLeadSort] = useState<{ key: LeadSortKey | null; direction: "asc" | "desc" | null }>({ key: null, direction: null });
@@ -845,6 +893,7 @@ export default function MarketingAgentDashboard() {
   const [csvPersona, setCsvPersona] = useState<string>("");
   const [csvPersonas, setCsvPersonas] = useState<{ slug: string; name: string }[]>([]);
   const [csvCategory, setCsvCategory] = useState<string>("sales");
+  const [csvBusinessLine, setCsvBusinessLine] = useState<string>("cmmc");
   const [csvParsing, setCsvParsing] = useState(false);
   const [csvImporting, setCsvImporting] = useState(false);
 
@@ -883,7 +932,7 @@ export default function MarketingAgentDashboard() {
     try {
       const res = await fetch("/api/marketing/leads/import-confirm", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null, category: csvCategory }),
+        body: JSON.stringify({ mapping: csvMapping, all_rows: csvRows, persona_slug: csvPersona || null, category: csvCategory, business_line: csvBusinessLine }),
       });
       const data = await res.json();
       if (!res.ok) { showToast(data.error ?? "Import failed", "#C94C4C"); return; }
@@ -1011,6 +1060,27 @@ export default function MarketingAgentDashboard() {
     if (res.ok) setQueue(await res.json());
   }, []);
 
+  const fetchOutreachStatus = useCallback(async () => {
+    const res = await fetch("/api/marketing/outreach-status");
+    if (res.ok) setOutreachStatus(await res.json());
+  }, []);
+
+  const runResendSync = async () => {
+    setSyncingResend(true);
+    try {
+      const res = await fetch("/api/marketing/sync-resend-status", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(`Synced: ${data.delivered} delivered, ${data.bounced} bounced (${data.checked} checked)`, "#4CC98E");
+        await fetchOutreachStatus();
+      } else {
+        showToast(data.error ?? "Sync failed", "#C94C4C");
+      }
+    } finally {
+      setSyncingResend(false);
+    }
+  };
+
   const fetchConfig = useCallback(async () => {
     const res = await fetch("/api/marketing/config");
     if (!res.ok) return;
@@ -1044,16 +1114,16 @@ export default function MarketingAgentDashboard() {
   }, []);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue()]);
-  }, [fetchStats, fetchLeads, fetchPending, fetchQueue]);
+    await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchOutreachStatus()]);
+  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchOutreachStatus]);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchConfig(), fetchPersonas(), fetchSkills()]);
+      await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchOutreachStatus(), fetchConfig(), fetchPersonas(), fetchSkills()]);
       setLoading(false);
     })();
-  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchConfig, fetchPersonas, fetchSkills]);
+  }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchOutreachStatus, fetchConfig, fetchPersonas, fetchSkills]);
 
   const toggleProvider = async (p: string) => {
     setProvider(p);
@@ -1270,6 +1340,7 @@ export default function MarketingAgentDashboard() {
   const TABS = [
     { id: "approval", label: "Approval Queue", count: pending.length },
     { id: "queue", label: "Send Queue", count: queue.due.length },
+    { id: "outreach-status", label: "Outreach Status", count: outreachStatus.upcoming3Days.length },
     { id: "pipeline", label: "Pipeline", count: null },
     { id: "leads", label: "Leads", count: stats.total },
     { id: "personas", label: "Personas", count: personasList.length },
@@ -1280,6 +1351,7 @@ export default function MarketingAgentDashboard() {
   const filteredLeads = leads.filter((lead) => {
     if (leadFilter !== "all" && lead.status !== leadFilter) return false;
     if (categoryFilter !== "all" && lead.category !== categoryFilter) return false;
+    if (businessLineFilter !== "all" && lead.business_line !== businessLineFilter) return false;
     return true;
   });
 
@@ -1652,6 +1724,106 @@ export default function MarketingAgentDashboard() {
           </div>
         )}
 
+        {/* ── Outreach Status ── */}
+        {tab === "outreach-status" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Outreach Status</h2>
+              <button onClick={runResendSync} disabled={syncingResend}
+                style={{ background: syncingResend ? "rgba(76,201,142,0.3)" : "linear-gradient(135deg, #4CC98E, #2E8C5C)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: syncingResend ? "not-allowed" : "pointer" }}>
+                {syncingResend ? "Syncing..." : `Sync Delivery Status from Resend${outreachStatus.pendingDeliverySync ? ` (${outreachStatus.pendingDeliverySync} pending)` : ""}`}
+              </button>
+            </div>
+
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+                Sending in the next 3 days ({outreachStatus.upcoming3Days.length})
+              </div>
+              {outreachStatus.upcoming3Days.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#444", padding: "10px 14px" }}>Nothing scheduled in the next 3 days.</div>
+              ) : (
+                outreachStatus.upcoming3Days.map(t => (
+                  <div key={t.email_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 7, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: "#ddd" }}>{t.company_name}</span>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.15)", padding: "1px 6px", borderRadius: 3 }}>
+                      Touch {t.touch_number}
+                    </span>
+                    <span style={{ fontSize: 12, color: "#888" }}>{t.subject}</span>
+                    <span style={{ fontSize: 11, color: "#555", marginLeft: "auto" }}>
+                      {t.scheduled_at ? new Date(t.scheduled_at).toLocaleString() : "Not scheduled"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+                Recently sent ({outreachStatus.recentlySent.length})
+              </div>
+              {outreachStatus.recentlySent.length === 0 ? (
+                <div style={{ fontSize: 12, color: "#444", padding: "10px 14px" }}>Nothing sent yet.</div>
+              ) : (
+                outreachStatus.recentlySent.map(t => (
+                  <div key={t.email_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 7, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: "#ddd" }}>{t.company_name}</span>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.15)", padding: "1px 6px", borderRadius: 3 }}>
+                      Touch {t.touch_number}
+                    </span>
+                    <Badge
+                      label={t.bounced_at ? "bounced" : t.delivered_at ? "delivered" : "sent (unconfirmed)"}
+                      color={t.bounced_at ? "#C94C4C" : t.delivered_at ? "#4CC98E" : "#888"}
+                    />
+                    <span style={{ fontSize: 11, color: "#555", marginLeft: "auto" }}>
+                      {t.sent_at ? new Date(t.sent_at).toLocaleString() : ""}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {outreachStatus.bounced.length > 0 && (
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 11, color: "#C94C4C", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+                  Bounced ({outreachStatus.bounced.length})
+                </div>
+                {outreachStatus.bounced.map(t => (
+                  <div key={t.email_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(201,76,76,0.06)", border: "1px solid rgba(201,76,76,0.2)", borderRadius: 7, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, color: "#ddd" }}>{t.company_name}</span>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: "#7C6AC4", background: "rgba(124,106,196,0.15)", padding: "1px 6px", borderRadius: 3 }}>
+                      Touch {t.touch_number}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#C94C4C", marginLeft: "auto" }}>{t.bounce_reason}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontSize: 11, color: "#555", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 12 }}>
+                Per-lead sequence progress ({outreachStatus.leads.length})
+              </div>
+              {outreachStatus.leads.map(lead => (
+                <div key={lead.lead_id} style={{ padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 7, marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#ddd" }}>{lead.company_name}</span>
+                    <Badge label={CATEGORY_LABELS[lead.category] ?? lead.category} color="#7C6AC4" />
+                    <Badge label={BUSINESS_LINE_LABELS[lead.business_line] ?? lead.business_line} color="#4CC98E" />
+                    <Badge label={lead.sequence_status} color={lead.sequence_status === "sent" ? "#4CC98E" : "#C9A84C"} />
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {lead.touches.map(t => (
+                      <span key={t.email_id} style={{ fontSize: 11, color: t.bounced_at ? "#C94C4C" : t.delivered_at ? "#4CC98E" : t.email_status === "sent" ? "#888" : "#555", padding: "3px 8px", borderRadius: 4, background: "rgba(255,255,255,0.03)" }}>
+                        Touch {t.touch_number}: {t.bounced_at ? "bounced" : t.delivered_at ? "delivered" : t.email_status === "sent" ? "sent (unconfirmed)" : t.scheduled_at ? `scheduled ${new Date(t.scheduled_at).toLocaleDateString()}` : "drafted"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── Pipeline ── */}
         {tab === "pipeline" && (
           <div>
@@ -1720,6 +1892,17 @@ export default function MarketingAgentDashboard() {
                     <select style={fieldStyle} value={csvCategory} onChange={e => setCsvCategory(e.target.value)}>
                       {CATEGORY_OPTIONS.map(c => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
                     </select>
+                  </div>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>Business Line</label>
+                    <select style={fieldStyle} value={csvBusinessLine} onChange={e => setCsvBusinessLine(e.target.value)}>
+                      {BUSINESS_LINE_OPTIONS.map(b => <option key={b} value={b}>{BUSINESS_LINE_LABELS[b]}</option>)}
+                    </select>
+                    {csvBusinessLine !== "cmmc" && (
+                      <p style={{ fontSize: 11, color: "#888", margin: "4px 0 0" }}>
+                        These leads will stay at status "discovered" — no CMMC qualifier rubric exists for this line yet.
+                      </p>
+                    )}
                   </div>
                   <div style={{ marginBottom: 12 }}>
                     <label style={labelStyle}>Outreach Persona (optional)</label>
@@ -1802,6 +1985,14 @@ export default function MarketingAgentDashboard() {
                     <button key={c} onClick={() => { setCategoryFilter(c); setLeadsPage(1); }}
                       style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${categoryFilter === c ? "rgba(124,106,196,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: categoryFilter === c ? "rgba(124,106,196,0.1)" : "transparent", color: categoryFilter === c ? "#7C6AC4" : "#666", cursor: "pointer" }}>
                       {c === "all" ? "all" : CATEGORY_LABELS[c]}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["all", ...BUSINESS_LINE_OPTIONS].map(b => (
+                    <button key={b} onClick={() => { setBusinessLineFilter(b); setLeadsPage(1); }}
+                      style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${businessLineFilter === b ? "rgba(76,201,142,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: businessLineFilter === b ? "rgba(76,201,142,0.1)" : "transparent", color: businessLineFilter === b ? "#4CC98E" : "#666", cursor: "pointer" }}>
+                      {b === "all" ? "all lines" : BUSINESS_LINE_LABELS[b]}
                     </button>
                   ))}
                 </div>
