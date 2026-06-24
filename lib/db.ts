@@ -208,7 +208,7 @@ const AGENT_CONFIG_DEFAULTS: Record<string, string> = {
   llm_tier: 'balanced',
   qualifier_min_score: '6',
   sequence_delay_days: '4,9',
-  daily_send_limit: '50',
+  daily_send_limit: '100',
   batch_size: '10',
   smtp_host: '',
   smtp_from: '',

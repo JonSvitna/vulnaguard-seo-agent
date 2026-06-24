@@ -191,13 +191,16 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 // ─── Small components ──────────────────────────────────────
-function StatCard({ label, value, color, sub }: any) {
+function StatCard({ label, value, color, sub, onClick }: any) {
   return (
-    <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "14px 16px" }}>
+    <button onClick={onClick}
+      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "14px 16px", textAlign: "left", cursor: onClick ? "pointer" : "default", transition: "background 0.15s" }}
+      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}>
       <div style={{ fontSize: 11, color: "#666", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 700, color: color || "#fff", lineHeight: 1, fontFamily: "monospace" }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>{sub}</div>}
-    </div>
+    </button>
   );
 }
 
@@ -822,6 +825,10 @@ export default function MarketingAgentDashboard() {
   const [tab, setTab] = useState("approval");
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
   const [pending, setPending] = useState<PendingSequence[]>([]);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [pendingTotalPages, setPendingTotalPages] = useState(1);
+  const PENDING_PAGE_SIZE = 50;
   const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
   const [outreachStatus, setOutreachStatus] = useState<OutreachStatus>({ leads: [], upcoming3Days: [], recentlySent: [], bounced: [], pendingDeliverySync: 0 });
   const [syncingResend, setSyncingResend] = useState(false);
@@ -1051,9 +1058,14 @@ export default function MarketingAgentDashboard() {
   }, []);
 
   const fetchPending = useCallback(async () => {
-    const res = await fetch("/api/marketing/approval/pending");
-    if (res.ok) setPending((await res.json()).pending);
-  }, []);
+    const res = await fetch(`/api/marketing/approval/pending?page=${pendingPage}&limit=${PENDING_PAGE_SIZE}`);
+    if (res.ok) {
+      const data = await res.json();
+      setPending(data.pending);
+      setPendingTotal(data.total ?? 0);
+      setPendingTotalPages(data.totalPages ?? 1);
+    }
+  }, [pendingPage]);
 
   const fetchQueue = useCallback(async () => {
     const res = await fetch("/api/marketing/send-queue");
@@ -1338,7 +1350,7 @@ export default function MarketingAgentDashboard() {
   };
 
   const TABS = [
-    { id: "approval", label: "Approval Queue", count: pending.length },
+    { id: "approval", label: "Approval Queue", count: pendingTotal },
     { id: "queue", label: "Send Queue", count: queue.due.length },
     { id: "outreach-status", label: "Outreach Status", count: outreachStatus.upcoming3Days.length },
     { id: "pipeline", label: "Pipeline", count: null },
@@ -1507,14 +1519,25 @@ export default function MarketingAgentDashboard() {
       {/* Stats bar */}
       <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
         {[
-          { label: "Discovered", value: stats.discovered, color: "#4C8EC9" },
-          { label: "Qualified", value: stats.qualified, color: "#C9A84C" },
-          { label: "Drafted", value: stats.drafted, color: "#7C6AC4" },
-          { label: "Approved", value: stats.approved, color: "#4CC98E" },
-          { label: "Sent", value: stats.sent, color: "#4CC98E" },
-          { label: "Replied", value: stats.replied, color: "#C9A84C" },
-          { label: "Disqualified", value: stats.disqualified, color: "#555" },
-        ].map(s => <StatCard key={s.label} {...s} />)}
+          { label: "Discovered", value: stats.discovered, color: "#4C8EC9", status: "discovered" },
+          { label: "Qualified", value: stats.qualified, color: "#C9A84C", status: "qualified" },
+          { label: "Drafted", value: stats.drafted, color: "#7C6AC4", status: "drafted", goToApproval: true },
+          { label: "Approved", value: stats.approved, color: "#4CC98E", status: "approved" },
+          { label: "Sent", value: stats.sent, color: "#4CC98E", status: "sent" },
+          { label: "Replied", value: stats.replied, color: "#C9A84C", status: "replied" },
+          { label: "Disqualified", value: stats.disqualified, color: "#555", status: "disqualified" },
+        ].map(s => (
+          <StatCard key={s.label} label={s.label} value={s.value} color={s.color}
+            onClick={() => {
+              if (s.goToApproval) { setTab("approval"); return; }
+              setLeadFilter(s.status);
+              setCategoryFilter("all");
+              setBusinessLineFilter("all");
+              setLeadsPage(1);
+              setTab("leads");
+            }}
+          />
+        ))}
       </div>
 
       {/* Tabs */}
@@ -1545,7 +1568,10 @@ export default function MarketingAgentDashboard() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div>
                 <h2 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 4px" }}>Approval Queue</h2>
-                <p style={{ fontSize: 12, color: "#666", margin: 0 }}>Review each sequence before it sends. Approve individually or in bulk.</p>
+                <p style={{ fontSize: 12, color: "#666", margin: 0 }}>
+                  Review each sequence before it sends. Approve individually or in bulk.
+                  {pendingTotal > 0 && ` Showing page ${pendingPage} of ${pendingTotalPages} (${pendingTotal} total drafted).`}
+                </p>
               </div>
               {pending.length > 0 && (
                 <div style={{ display: "flex", gap: 8 }}>
@@ -1576,6 +1602,20 @@ export default function MarketingAgentDashboard() {
                   onReject={rejectOne}
                 />
               ))
+            )}
+
+            {pendingTotalPages > 1 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 16, fontSize: 12, color: "#666" }}>
+                <button onClick={() => setPendingPage(p => Math.max(1, p - 1))} disabled={pendingPage === 1}
+                  style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 10px", color: pendingPage === 1 ? "#333" : "#888", cursor: pendingPage === 1 ? "default" : "pointer", fontSize: 11 }}>
+                  Prev
+                </button>
+                <span>Page {pendingPage} of {pendingTotalPages}</span>
+                <button onClick={() => setPendingPage(p => Math.min(pendingTotalPages, p + 1))} disabled={pendingPage === pendingTotalPages}
+                  style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 5, padding: "4px 10px", color: pendingPage === pendingTotalPages ? "#333" : "#888", cursor: pendingPage === pendingTotalPages ? "default" : "pointer", fontSize: 11 }}>
+                  Next
+                </button>
+              </div>
             )}
           </div>
         )}
