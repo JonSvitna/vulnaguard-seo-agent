@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/db";
 import { extractLeads } from "@/vulnaguard-marketing-agents/agents/scout";
 import { qualifyAndUpdateLead } from "@/lib/marketing/qualify";
+import { rejectAlreadyContactedLeads } from "@/lib/marketing/external-dedup";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 
 export async function POST(req: NextRequest) {
@@ -54,8 +55,11 @@ export async function POST(req: NextRequest) {
       inserted.push(rows[0]);
     }
 
+    const externallyRejected = await rejectAlreadyContactedLeads(inserted);
+
     const qualified = await Promise.all(
       inserted.map(async (lead) => {
+        if (externallyRejected.has(lead.id)) return { ...lead, status: "rejected" };
         try {
           return await qualifyAndUpdateLead(lead);
         } catch (err) {
@@ -67,6 +71,7 @@ export async function POST(req: NextRequest) {
 
     const qualifiedCount = qualified.filter((l) => l.status === "qualified").length;
     const disqualifiedCount = qualified.filter((l) => l.status === "disqualified").length;
+    const alreadyContactedCount = externallyRejected.size;
 
     await query(
       `INSERT INTO pipeline_runs (agent, status, leads_processed, details, finished_at)
@@ -75,6 +80,7 @@ export async function POST(req: NextRequest) {
         extracted: extracted.length,
         imported: inserted.length,
         skipped_duplicates: skipped,
+        already_contacted: alreadyContactedCount,
         qualified: qualifiedCount,
         disqualified: disqualifiedCount,
       })]
@@ -84,6 +90,7 @@ export async function POST(req: NextRequest) {
       extracted: extracted.length,
       imported: inserted.length,
       skipped_duplicates: skipped,
+      already_contacted: alreadyContactedCount,
       qualified: qualifiedCount,
       disqualified: disqualifiedCount,
       leads: qualified,

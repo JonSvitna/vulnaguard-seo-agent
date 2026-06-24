@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, ensureSchema } from "@/lib/db";
 import { qualifyAndUpdateLead } from "@/lib/marketing/qualify";
+import { rejectAlreadyContactedLeads } from "@/lib/marketing/external-dedup";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 
 type LeadField =
@@ -65,11 +66,16 @@ export async function POST(req: NextRequest) {
       inserted.push(rows[0]);
     }
 
+    // Cross-check against Ai-Marketing's sent-email history before scoring —
+    // no point qualifying a lead we've already emailed from the other app.
+    const externallyRejected = await rejectAlreadyContactedLeads(inserted);
+
     // The qualifier's scoring rubrics are CMMC/Sentinel-specific — only auto-run it
     // for that business line. Other lines (e.g. website_dev) stay 'discovered' until
     // a dedicated rubric exists, rather than being scored against the wrong criteria.
     const qualified = await Promise.all(
       inserted.map(async (lead) => {
+        if (externallyRejected.has(lead.id)) return { ...lead, status: "rejected" };
         if ((lead.business_line ?? "cmmc") !== "cmmc") return lead;
         try { return await qualifyAndUpdateLead(lead); }
         catch (err) {
@@ -81,6 +87,7 @@ export async function POST(req: NextRequest) {
 
     const qualifiedCount = qualified.filter((l) => l.status === "qualified").length;
     const disqualifiedCount = qualified.filter((l) => l.status === "disqualified").length;
+    const alreadyContactedCount = externallyRejected.size;
 
     await query(
       `INSERT INTO pipeline_runs (agent, status, leads_processed, details, finished_at)
@@ -89,6 +96,7 @@ export async function POST(req: NextRequest) {
         total_rows: all_rows.length,
         imported: inserted.length,
         skipped_duplicates: skipped,
+        already_contacted: alreadyContactedCount,
         qualified: qualifiedCount,
         disqualified: disqualifiedCount,
         persona_slug: persona_slug ?? null,
@@ -99,6 +107,7 @@ export async function POST(req: NextRequest) {
       extracted: all_rows.length,
       imported: inserted.length,
       skipped_duplicates: skipped,
+      already_contacted: alreadyContactedCount,
       qualified: qualifiedCount,
       disqualified: disqualifiedCount,
       leads: qualified,

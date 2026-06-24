@@ -1,4 +1,4 @@
-import { QUALIFIER_PROMPTS, COPYWRITER_PROMPT, CATEGORY_CONTEXT } from "./systemPrompts";
+import { QUALIFIER_PROMPTS, COPYWRITER_PROMPTS, CATEGORY_CONTEXT } from "./systemPrompts";
 import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import { query } from "@/lib/db";
 import type { OutreachLead, QualifierResult, CopywriterResult } from "./types";
@@ -113,7 +113,7 @@ export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> 
 }
 
 export async function draftSequence(lead: OutreachLead, personaSlug?: string | null, outreachIntent?: string | null, skillSlugs?: string[] | null): Promise<CopywriterResult> {
-  let systemPrompt = COPYWRITER_PROMPT;
+  let systemPrompt = COPYWRITER_PROMPTS[lead.business_line ?? "cmmc"] ?? COPYWRITER_PROMPTS.cmmc;
 
   // Stack voice skills above the base prompt
   const slugsToLoad = skillSlugs?.filter(Boolean) ?? [];
@@ -124,7 +124,7 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
     );
     if (rows.length) {
       const skillBlocks = rows.map(r => `## Voice Skill: ${r.name}\n\n${r.body}`).join("\n\n");
-      systemPrompt = `${skillBlocks}\n\n---\n\n${COPYWRITER_PROMPT}`;
+      systemPrompt = `${skillBlocks}\n\n---\n\n${systemPrompt}`;
     }
   }
 
