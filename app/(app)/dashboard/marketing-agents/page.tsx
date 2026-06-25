@@ -174,7 +174,7 @@ function statusColor(status: string) {
   const map: Record<string, string> = {
     discovered: "#4C8EC9", qualified: "#C9A84C", drafted: "#7C6AC4",
     approved: "#4CC98E", sent: "#4CC98E", replied: "#C9A84C",
-    disqualified: "#666", rejected: "#666",
+    disqualified: "#666", rejected: "#666", unsubscribed: "#C94C4C",
   };
   return map[status] || "#666";
 }
@@ -186,7 +186,7 @@ function daysUntil(dateStr: string | null) {
 }
 
 const TIERS = ["fast", "balanced", "powerful"];
-const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected"];
+const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed"];
 const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral"];
 const CATEGORY_LABELS: Record<string, string> = {
   sales: "Sales", partnership: "Partnership", relationship_building: "Relationship Building", referral: "Referral",
@@ -492,6 +492,53 @@ function LeadModal({ lead, onClose, onSave }: { lead: Lead | null; onClose: () =
       <button onClick={handleSave} disabled={saving || !form.company_name?.trim()}
         style={{ marginTop: 16, width: "100%", padding: "10px", background: saving ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8B6914)", border: "none", borderRadius: 8, color: "#0D0F14", fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
         {saving ? "Saving..." : lead ? "Save Changes" : "Add Lead"}
+      </button>
+    </Modal>
+  );
+}
+
+// ─── Opt-out modal ──────────────────────────────────────────
+function OptOutModal({ lead, onClose, onSent }: { lead: { id: number; company_name: string; contact_name: string | null }; onClose: () => void; onSent: () => Promise<void> }) {
+  const firstName = lead.contact_name?.trim().split(/\s+/)[0] || "there";
+  const [subject, setSubject] = useState("Got it — you're all set");
+  const [body, setBody] = useState(
+    `Hi ${firstName},\n\nThanks for letting us know — we've taken you off our list, so you won't hear from us again. Enjoy retirement!\n\nBest,\nVulnaguard`
+  );
+  const [sending, setSending] = useState(false);
+
+  const handleSend = async () => {
+    if (!subject.trim() || !body.trim()) return;
+    setSending(true);
+    try {
+      const res = await fetch(`/api/marketing/leads/${lead.id}/optout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subject, body }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error ?? "Failed to send ack");
+        return;
+      }
+      await onSent();
+      onClose();
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Modal title={`Opt Out — ${lead.company_name}`} onClose={onClose}>
+      <p style={{ fontSize: 12, color: "#888", marginTop: 0 }}>
+        Sends this ack to the contact, marks the lead as <code>unsubscribed</code> (no further touches go out), and posts a notice in Slack.
+      </p>
+      <label style={labelStyle}>Subject</label>
+      <input style={fieldStyle} value={subject} onChange={(e) => setSubject(e.target.value)} />
+      <label style={{ ...labelStyle, marginTop: 10 }}>Body</label>
+      <textarea style={{ ...fieldStyle, minHeight: 140, fontFamily: "inherit", resize: "vertical" }} value={body} onChange={(e) => setBody(e.target.value)} />
+      <button onClick={handleSend} disabled={sending || !subject.trim() || !body.trim()}
+        style={{ marginTop: 16, width: "100%", padding: "10px", background: sending ? "rgba(201,76,76,0.3)" : "linear-gradient(135deg, #C94C4C, #8B1414)", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: sending ? "not-allowed" : "pointer" }}>
+        {sending ? "Sending..." : "Send Ack & Unsubscribe"}
       </button>
     </Modal>
   );
@@ -876,6 +923,7 @@ export default function MarketingAgentDashboard() {
   const [sequenceModal, setSequenceModal] = useState<{ leadId: number; companyName: string; currentPersonaSlug?: string | null; initialDraft?: { emails: PendingEmail[]; linkedin_message: string } } | null>(null);
   const [draftModal, setDraftModal] = useState<{ id: number; company_name: string; persona_slug: string | null; outreach_intent: string | null; status: string; skill_slugs: string[] } | null>(null);
   const [historyModal, setHistoryModal] = useState<{ leadId: number; companyName: string } | null>(null);
+  const [optOutModal, setOptOutModal] = useState<{ id: number; company_name: string; contact_name: string | null } | null>(null);
   const [aiRunningId, setAiRunningId] = useState<number | null>(null);
 
   // Bulk import (Scout — text paste)
@@ -1475,6 +1523,16 @@ export default function MarketingAgentDashboard() {
           leadId={historyModal.leadId}
           companyName={historyModal.companyName}
           onClose={() => setHistoryModal(null)}
+        />
+      )}
+      {optOutModal && (
+        <OptOutModal
+          lead={optOutModal}
+          onClose={() => setOptOutModal(null)}
+          onSent={async () => {
+            showToast("Opt-out ack sent, lead unsubscribed");
+            await refreshAll();
+          }}
         />
       )}
       {personaEditorModal !== null && (
@@ -2247,6 +2305,12 @@ export default function MarketingAgentDashboard() {
                             <button onClick={() => markSent(lead)}
                               style={{ background: "rgba(76,201,142,0.1)", border: "1px solid rgba(76,201,142,0.3)", borderRadius: 5, padding: "3px 7px", color: "#4CC98E", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
                               Mark Sent
+                            </button>
+                          )}
+                          {lead.status !== "unsubscribed" && (
+                            <button onClick={() => setOptOutModal({ id: lead.id, company_name: lead.company_name, contact_name: lead.contact_name })}
+                              style={{ background: "rgba(201,76,76,0.1)", border: "1px solid rgba(201,76,76,0.3)", borderRadius: 5, padding: "3px 7px", color: "#C94C4C", fontSize: 10, cursor: "pointer", flexShrink: 0 }}>
+                              Opt Out
                             </button>
                           )}
                           <button onClick={() => deleteLead(lead)}
