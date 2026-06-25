@@ -36,11 +36,13 @@ async function logPromptRun(args: {
   response?: string;
   status: "success" | "error";
   error?: string;
+  inputTokens?: number;
+  outputTokens?: number;
 }): Promise<void> {
   try {
     await query(
-      `INSERT INTO prompt_runs (agent_name, lead_id, provider, model, system_prompt, user_prompt, response, status, error, duration_ms, started_at, finished_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())`,
+      `INSERT INTO prompt_runs (agent_name, lead_id, provider, model, system_prompt, user_prompt, response, status, error, duration_ms, started_at, finished_at, input_tokens, output_tokens)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), $12, $13)`,
       [
         args.agentName,
         args.leadId,
@@ -53,6 +55,8 @@ async function logPromptRun(args: {
         args.error ?? null,
         Date.now() - args.startedAt.getTime(),
         args.startedAt,
+        args.inputTokens ?? null,
+        args.outputTokens ?? null,
       ],
     );
   } catch (err) {
@@ -66,6 +70,8 @@ async function callAI(agentName: string, system: string, userContent: string, ma
 
   try {
     let text: string;
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
     if (config.provider === 'openai') {
       const client = makeOpenAIClient();
       const res = await client.chat.completions.create({
@@ -77,6 +83,8 @@ async function callAI(agentName: string, system: string, userContent: string, ma
         ],
       });
       text = res.choices[0]?.message?.content ?? '';
+      inputTokens = res.usage?.prompt_tokens;
+      outputTokens = res.usage?.completion_tokens;
     } else {
       const client = makeAnthropicClient();
       const message = await client.messages.create({
@@ -89,9 +97,11 @@ async function callAI(agentName: string, system: string, userContent: string, ma
         .filter((b) => b.type === 'text')
         .map((b) => (b as { type: 'text'; text: string }).text)
         .join('');
+      inputTokens = message.usage?.input_tokens;
+      outputTokens = message.usage?.output_tokens;
     }
 
-    await logPromptRun({ agentName, leadId, provider: config.provider, model: config.model, system, userContent, startedAt, response: text, status: "success" });
+    await logPromptRun({ agentName, leadId, provider: config.provider, model: config.model, system, userContent, startedAt, response: text, status: "success", inputTokens, outputTokens });
     return text;
   } catch (err) {
     const message = err instanceof Error ? err.message : "AI call failed";

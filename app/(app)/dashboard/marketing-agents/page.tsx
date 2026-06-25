@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable @typescript-eslint/no-explicit-any, react/no-unescaped-entities */
 import { useState, useEffect, useCallback } from "react";
+import { UsagePanel } from "./UsagePanel";
 
 // ─── Types ────────────────────────────────────────────────
 interface Lead {
@@ -192,19 +193,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 // ─── Small components ──────────────────────────────────────
-function StatCard({ label, value, color, sub, onClick }: any) {
-  return (
-    <button onClick={onClick}
-      style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "14px 16px", textAlign: "left", cursor: onClick ? "pointer" : "default", transition: "background 0.15s" }}
-      onMouseEnter={e => { if (onClick) e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
-      onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.03)"; }}>
-      <div style={{ fontSize: 11, color: "#666", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: color || "#fff", lineHeight: 1, fontFamily: "monospace" }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>{sub}</div>}
-    </button>
-  );
-}
-
 function Badge({ label, color }: any) {
   return (
     <span style={{ fontSize: 10, fontWeight: 700, fontFamily: "monospace", letterSpacing: "0.05em", padding: "2px 7px", borderRadius: 3, background: `${color}22`, color, border: `1px solid ${color}44` }}>
@@ -1522,29 +1510,17 @@ export default function MarketingAgentDashboard() {
         </div>
       </header>
 
-      {/* Stats bar */}
-      <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
-        {[
-          { label: "Discovered", value: stats.discovered, color: "#4C8EC9", status: "discovered" },
-          { label: "Qualified", value: stats.qualified, color: "#C9A84C", status: "qualified" },
-          { label: "Drafted", value: stats.drafted, color: "#7C6AC4", status: "drafted", goToApproval: true },
-          { label: "Approved", value: stats.approved, color: "#4CC98E", status: "approved" },
-          { label: "Sent", value: stats.sent, color: "#4CC98E", status: "sent" },
-          { label: "Replied", value: stats.replied, color: "#C9A84C", status: "replied" },
-          { label: "Disqualified", value: stats.disqualified, color: "#555", status: "disqualified" },
-        ].map(s => (
-          <StatCard key={s.label} label={s.label} value={s.value} color={s.color}
-            onClick={() => {
-              if (s.goToApproval) { setTab("approval"); return; }
-              setLeadFilter(s.status);
-              setCategoryFilter("all");
-              setBusinessLineFilter("all");
-              setLeadsPage(1);
-              setTab("leads");
-            }}
-          />
-        ))}
-      </div>
+      {/* Usage panel — sent/bounced trend, AI token+cost usage, pipeline funnel */}
+      <UsagePanel
+        onFunnelClick={(stage) => {
+          if (stage === "drafted") { setTab("approval"); return; }
+          setLeadFilter(stage);
+          setCategoryFilter("all");
+          setBusinessLineFilter("all");
+          setLeadsPage(1);
+          setTab("leads");
+        }}
+      />
 
       {/* Tabs */}
       <div style={{ padding: "0 24px", borderBottom: "1px solid rgba(255,255,255,0.06)", display: "flex", gap: 0 }}>
