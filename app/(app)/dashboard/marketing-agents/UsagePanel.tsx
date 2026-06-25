@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   BarChart, Bar,
@@ -81,66 +81,94 @@ function useCountUp(target: number, duration = 800): number {
   return value;
 }
 
-function MetricCard({ label, value, format, color, sub, onClick, delay = 0 }: {
-  label: string;
-  value: number;
-  format: (n: number) => string;
-  color: string;
-  sub?: string;
-  onClick?: () => void;
-  delay?: number;
-}) {
-  const animated = useCountUp(value);
+
+function MiniSparkline({ data, dataKey, color }: { data: SentDay[]; dataKey: string; color: string }) {
   return (
-    <motion.button
-      onClick={onClick}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay, duration: 0.35, ease: "easeOut" }}
-      whileHover={onClick ? { background: "rgba(255,255,255,0.06)" } : undefined}
-      style={{
-        background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: 8, padding: "14px 16px", textAlign: "left", cursor: onClick ? "pointer" : "default",
-        display: "block", width: "100%",
-      }}
-    >
-      <div style={{ fontSize: 11, color: "#666", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color, lineHeight: 1, fontFamily: "monospace" }}>{format(animated)}</div>
-      {sub && <div style={{ fontSize: 11, color: "#555", marginTop: 4 }}>{sub}</div>}
-    </motion.button>
+    <ResponsiveContainer width={90} height={28}>
+      <AreaChart data={data}>
+        <defs>
+          <linearGradient id={`mini-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.5} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <Area type="monotone" dataKey={dataKey} stroke={color} fill={`url(#mini-${dataKey})`} strokeWidth={1.5} isAnimationActive={false} />
+      </AreaChart>
+    </ResponsiveContainer>
   );
 }
 
-export function UsagePanel({ onFunnelClick }: { onFunnelClick: (stage: string) => void }) {
+function InlineStat({ label, value, format, color }: { label: string; value: number; format: (n: number) => string; color: string }) {
+  const animated = useCountUp(value);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span style={{ fontSize: 9, color: "#666", letterSpacing: "0.08em", textTransform: "uppercase" }}>{label}</span>
+      <span style={{ fontSize: 15, fontWeight: 700, color, fontFamily: "monospace", lineHeight: 1 }}>{format(animated)}</span>
+    </div>
+  );
+}
+
+export function UsagePanel({ onFunnelClick, refreshKey }: { onFunnelClick: (stage: string) => void; refreshKey?: number }) {
   const [data, setData] = useState<UsageStats>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+    const load = async () => {
       const res = await fetch("/api/marketing/usage-stats");
-      if (res.ok) setData(await res.json());
-      setLoading(false);
-    })();
-  }, []);
+      if (res.ok && !cancelled) setData(await res.json());
+      if (!cancelled) setLoading(false);
+    };
+    load();
+    // Background sends happen on a 15-min cron — poll so the panel doesn't
+    // need a full page reload to reflect them.
+    const interval = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [refreshKey]);
 
   const totalSent30d = data.sentOverTime.reduce((s, d) => s + d.sent, 0);
   const totalBounced30d = data.sentOverTime.reduce((s, d) => s + d.bounced, 0);
   const maxFunnel = Math.max(1, ...data.funnel.map((f) => f.count));
 
   if (loading) {
-    return <div style={{ padding: "24px", color: "#444", fontSize: 13 }}>Loading usage stats...</div>;
+    return <div style={{ padding: "10px 24px", color: "#444", fontSize: 12, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>Loading usage stats...</div>;
   }
 
   return (
-    <div style={{ padding: "16px 24px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-      {/* Top metric row */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
-        <MetricCard label="Sent (30d)" value={totalSent30d} format={(n) => Math.round(n).toLocaleString()} color="#4CC98E" delay={0} />
-        <MetricCard label="Bounced (30d)" value={totalBounced30d} format={(n) => Math.round(n).toLocaleString()} color="#C94C4C" delay={0.05} />
-        <MetricCard label="AI Tokens (30d)" value={data.totals.input_tokens + data.totals.output_tokens} format={(n) => Math.round(n).toLocaleString()} color="#7C6AC4" delay={0.1} />
-        <MetricCard label="Est. AI Cost (30d)" value={data.totals.cost} format={(n) => `$${n.toFixed(2)}`} color="#C9A84C" sub="list pricing, approximate" delay={0.15} />
-      </div>
+    <div style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      {/* Collapsed strip — always visible, click to expand */}
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 24, padding: "10px 24px",
+          background: "none", border: "none", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        <MiniSparkline data={data.sentOverTime} dataKey="sent" color="#4CC98E" />
+        <InlineStat label="Sent (30d)" value={totalSent30d} format={(n) => Math.round(n).toLocaleString()} color="#4CC98E" />
+        <InlineStat label="Bounced (30d)" value={totalBounced30d} format={(n) => Math.round(n).toLocaleString()} color="#C94C4C" />
+        <InlineStat label="AI Tokens (30d)" value={data.totals.input_tokens + data.totals.output_tokens} format={(n) => Math.round(n).toLocaleString()} color="#7C6AC4" />
+        <InlineStat label="Est. AI Cost (30d)" value={data.totals.cost} format={(n) => `$${n.toFixed(2)}`} color="#C9A84C" />
+        <motion.span
+          animate={{ rotate: expanded ? 180 : 0 }}
+          transition={{ duration: 0.25 }}
+          style={{ marginLeft: "auto", color: "#555", fontSize: 12 }}
+        >
+          ▾
+        </motion.span>
+      </button>
 
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <div style={{ padding: "0 24px 16px" }}>
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
         {/* Sent over time */}
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2, duration: 0.4 }}
@@ -221,6 +249,10 @@ export function UsagePanel({ onFunnelClick }: { onFunnelClick: (stage: string) =
           </div>
         </motion.div>
       )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -819,6 +819,7 @@ export default function MarketingAgentDashboard() {
   const [pendingTotalPages, setPendingTotalPages] = useState(1);
   const [pendingBusinessLine, setPendingBusinessLine] = useState("all");
   const [pendingSearch, setPendingSearch] = useState("");
+  const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const PENDING_PAGE_SIZE = 50;
   const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
   const [outreachStatus, setOutreachStatus] = useState<OutreachStatus>({ leads: [], upcoming3Days: [], recentlySent: [], bounced: [], pendingDeliverySync: 0 });
@@ -1121,6 +1122,7 @@ export default function MarketingAgentDashboard() {
 
   const refreshAll = useCallback(async () => {
     await Promise.all([fetchStats(), fetchLeads(), fetchPending(), fetchQueue(), fetchOutreachStatus()]);
+    setUsageRefreshKey(k => k + 1);
   }, [fetchStats, fetchLeads, fetchPending, fetchQueue, fetchOutreachStatus]);
 
   useEffect(() => {
@@ -1512,6 +1514,7 @@ export default function MarketingAgentDashboard() {
 
       {/* Usage panel — sent/bounced trend, AI token+cost usage, pipeline funnel */}
       <UsagePanel
+        refreshKey={usageRefreshKey}
         onFunnelClick={(stage) => {
           if (stage === "drafted") { setTab("approval"); return; }
           setLeadFilter(stage);
