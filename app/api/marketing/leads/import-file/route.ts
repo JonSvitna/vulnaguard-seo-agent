@@ -19,14 +19,31 @@ const LEAD_FIELDS = [
 type LeadField = (typeof LEAD_FIELDS)[number];
 type ParsedRow = Record<string, string>;
 
+// Some exports (e.g. SBA cert search downloads) write the literal formula
+// text into the cell instead of a cached display value, so a "company name"
+// column can come through as `=HYPERLINK( "https://...", "COMPANY NAME" )`.
+// Unwrap that back to the display text before it ever reaches mapping/scoring.
+const HYPERLINK_FORMULA_RE = /^=HYPERLINK\(\s*"([^"]*)"\s*,\s*"([^"]*)"\s*\)$/i;
+
+function unwrapHyperlinkFormulas(rows: ParsedRow[]): ParsedRow[] {
+  return rows.map((row) => {
+    const cleaned: ParsedRow = {};
+    for (const [key, value] of Object.entries(row)) {
+      const match = typeof value === "string" ? value.match(HYPERLINK_FORMULA_RE) : null;
+      cleaned[key] = match ? match[2] : value;
+    }
+    return cleaned;
+  });
+}
+
 function parseCSV(buffer: Buffer): ParsedRow[] {
-  return parse(buffer, { columns: true, skip_empty_lines: true, trim: true }) as ParsedRow[];
+  return unwrapHyperlinkFormulas(parse(buffer, { columns: true, skip_empty_lines: true, trim: true }) as ParsedRow[]);
 }
 
 function parseExcel(buffer: Buffer): ParsedRow[] {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  return XLSX.utils.sheet_to_json<ParsedRow>(sheet, { defval: "" });
+  return unwrapHyperlinkFormulas(XLSX.utils.sheet_to_json<ParsedRow>(sheet, { defval: "" }));
 }
 
 async function inferMapping(

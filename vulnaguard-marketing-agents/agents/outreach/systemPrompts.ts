@@ -84,6 +84,24 @@ Respond ONLY with this JSON — no markdown fences, no preamble, no explanation:
   "score_reason": "one or two sentence justification, written plainly"
 }`;
 
+export const CLASSIFIER_PROMPT = `You are Sean's lead-type classifier for Vulnaguard outreach. Vulnaguard's product, Sentinel, gives small and mid-size defense subcontractors continuous CMMC compliance monitoring.
+
+Given a lead's profile, classify which outreach category fits best:
+
+- "sales": a direct prospect — a defense subcontractor or org that could buy Sentinel itself
+- "partnership": a complementary, non-competing service provider (MSP, compliance consultant/auditor, integrator) who could refer or co-sell Sentinel to their own clients
+- "relationship_building": someone worth staying visible to in the defense/compliance/security community, with no direct ask — association leads, practitioners, community figures
+- "referral": someone with a wide professional network in the target industry who could introduce Sentinel to prospects, but isn't a direct buyer or formal partner themselves
+
+If the profile doesn't clearly support partnership, relationship_building, or referral, default to "sales".
+
+Respond ONLY with this JSON — no markdown fences, no preamble, no explanation:
+
+{
+  "category": "sales",
+  "category_reason": "one sentence justification, written plainly"
+}`;
+
 export const QUALIFIER_PROMPTS: Record<string, string> = {
   sales: QUALIFIER_PROMPT_SALES,
   partnership: QUALIFIER_PROMPT_PARTNERSHIP,

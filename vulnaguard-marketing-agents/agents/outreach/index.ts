@@ -1,7 +1,9 @@
-import { QUALIFIER_PROMPTS, COPYWRITER_PROMPTS, CATEGORY_CONTEXT } from "./systemPrompts";
+import { QUALIFIER_PROMPTS, COPYWRITER_PROMPTS, CATEGORY_CONTEXT, CLASSIFIER_PROMPT } from "./systemPrompts";
 import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import { query } from "@/lib/db";
-import type { OutreachLead, QualifierResult, CopywriterResult } from "./types";
+import type { OutreachLead, QualifierResult, ClassifierResult, CopywriterResult } from "./types";
+
+const VALID_CATEGORIES = ["sales", "partnership", "relationship_building", "referral"];
 
 function leadProfile(lead: OutreachLead): string {
   return `Company: ${lead.company_name}
@@ -108,6 +110,20 @@ async function callAI(agentName: string, system: string, userContent: string, ma
     await logPromptRun({ agentName, leadId, provider: config.provider, model: config.model, system, userContent, startedAt, status: "error", error: message });
     throw err;
   }
+}
+
+export async function classifyLeadCategory(lead: OutreachLead): Promise<ClassifierResult> {
+  const raw = await callAI('classifier', CLASSIFIER_PROMPT, `Lead profile:\n\n${leadProfile(lead)}`, 200, lead.id ?? null);
+  const parsed = parseJson(raw) as Partial<ClassifierResult>;
+
+  if (typeof parsed.category !== "string" || !VALID_CATEGORIES.includes(parsed.category)) {
+    throw new Error("Missing or invalid category in AI response");
+  }
+  if (typeof parsed.category_reason !== "string") {
+    throw new Error("Missing required field in AI response: category_reason");
+  }
+
+  return { category: parsed.category, category_reason: parsed.category_reason };
 }
 
 export async function qualifyLead(lead: OutreachLead): Promise<QualifierResult> {

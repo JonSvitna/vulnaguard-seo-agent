@@ -26,6 +26,11 @@ export interface QualifierResult {
   score_reason: string;
 }
 
+export interface ClassifierResult {
+  category: string;
+  category_reason: string;
+}
+
 export interface SequenceEmail {
   touch_number: number;
   subject: string;
