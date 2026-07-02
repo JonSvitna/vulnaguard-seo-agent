@@ -100,7 +100,11 @@ export async function runSendBatch(): Promise<SendBatchResult> {
     })
 
     if (!result.ok) {
-      await query(`UPDATE emails SET status = 'drafted' WHERE id = $1`, [email.id])
+      // Permanent failures (bad address, domain not found) should not retry.
+      // Transient failures (rate limit, network) revert to drafted for retry.
+      const isPermanent = /invalid.*to|address|format|not found|422/i.test(result.error ?? '')
+      const nextStatus = isPermanent ? 'cancelled' : 'drafted'
+      await query(`UPDATE emails SET status = '${nextStatus}' WHERE id = $1`, [email.id])
       failed++
       errors.push(`Email ${email.id}: ${result.error}`)
       continue
