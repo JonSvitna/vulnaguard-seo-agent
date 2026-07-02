@@ -57,6 +57,7 @@ export async function runSendBatch(): Promise<SendBatchResult> {
          AND s.status = 'approved'
          AND e.scheduled_at <= NOW()
          AND l.contact_email IS NOT NULL
+         AND l.status != 'unsubscribed'
        ORDER BY e.scheduled_at ASC
        LIMIT $1
      )
