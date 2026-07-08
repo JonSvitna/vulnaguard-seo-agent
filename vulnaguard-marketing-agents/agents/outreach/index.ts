@@ -184,8 +184,10 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
   }
 
   let emails = parsed.emails;
+  let linkedinMessage = parsed.linkedin_message;
   if ((lead.business_line ?? "cmmc") === "commercial_security") {
-    emails = emails.map((e) => ({ ...e, body: ensureCommercialSecurityFooter(e.body) }));
+    emails = emails.map((e) => ({ ...e, body: stripEmDashes(ensureCommercialSecurityFooter(e.body)) }));
+    linkedinMessage = stripEmDashes(linkedinMessage);
     for (const e of emails) {
       const hit = findBannedPhrase(e.body);
       if (hit) {
@@ -194,7 +196,14 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
     }
   }
 
-  return { emails, linkedin_message: parsed.linkedin_message };
+  return { emails, linkedin_message: linkedinMessage };
+}
+
+// "No em dashes" is a hard voice rule but the model still reaches for them
+// (e.g. as a signoff dash). Safe to substitute deterministically since it's
+// a pure character swap, unlike banned-phrase rewrites which need judgment.
+function stripEmDashes(text: string): string {
+  return text.replace(/\s*—\s*/g, ", ").replace(/^, /, "");
 }
 
 // The copywriter model doesn't reliably include the CAN-SPAM footer on every

@@ -233,6 +233,7 @@ Sean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SEN
 3. Does it reference something true and specific about this company, not a generic template line?
 4. Is each email body under its word cap (150 / 80 / 60), not counting the footer?
 5. Is the ask low-pressure and singular?
+6. Does any email or the LinkedIn message contain an em dash (—) anywhere, including in a signoff? Remove it and use a period or comma instead.
 
 Respond ONLY with this JSON — no markdown fences, no preamble, no explanation. The "body" strings must include the footer exactly as shown above:
 
