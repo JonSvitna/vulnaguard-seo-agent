@@ -102,7 +102,22 @@ These live in the `agent_config` table and are edited from the dashboard's **Set
 
 ### Automated sending is live, not manual-only
 
-This section previously said sending was copy-to-clipboard/manual-only — that's no longer accurate. `instrumentation.ts` runs an in-process scheduler (every `SEND_BATCH_INTERVAL_MINUTES`, default 15 min) that calls `runSendBatch()` and `syncResendStatus()` continuously. Once a sequence is approved (`app/api/marketing/approval/approve/route.ts`), touch 1 is scheduled for `NOW()` and goes out via a real Resend send within about 15 minutes, unattended. This requires a long-running process (Railway), not a serverless deploy (Vercel) — the interval will not persist reliably across serverless invocations. Set `DISABLE_SEND_BATCH_SCHEDULER=true` to fall back to manual send only.
+This section previously said sending was copy-to-clipboard/manual-only — that's no longer accurate. `instrumentation.ts` runs an in-process scheduler (every `SEND_BATCH_INTERVAL_MINUTES`, default 15 min) that calls `runSendBatch()`, `syncResendStatus()`, and `checkStopReplies()` continuously. This requires a long-running process (Railway), not a serverless deploy (Vercel) — the interval will not persist reliably across serverless invocations. Set `DISABLE_SEND_BATCH_SCHEDULER=true` to disable all three and fall back to fully manual send.
+
+**Approving a sequence does not send it.** `POST /api/marketing/approval/approve` only signs off on the drafted content — touch 1 stays unscheduled until a separate `POST /api/marketing/approval/release` call (the "Release to Send" button in the Send Queue tab's "Awaiting Release" section). Only after release does touch 1 go out via a real Resend send within ~15 minutes, unattended, and touch 2/3 delays are computed from the release moment.
+
+### STOP-reply auto opt-out (requires MS365 credentials)
+
+`checkStopReplies()` (`lib/check-stop-replies.ts`) polls the M365 mailbox that outreach replies land in (via Microsoft Graph, app-only auth — the same pattern as `Vulnaguard-AIS-OS`'s `scripts/mail_to_slack.py`) and auto-unsubscribes any lead whose reply contains "stop." Without these four env vars set, this check silently no-ops (logged, not fatal) and opt-outs remain fully manual:
+
+| Variable | Purpose |
+| --- | --- |
+| `MS365_TENANT_ID` | Azure AD tenant ID |
+| `MS365_CLIENT_ID` | App registration client ID |
+| `MS365_CLIENT_SECRET` | App registration client secret |
+| `MS365_USER_UPN` | The mailbox UPN to poll (e.g. `outreach@vulnaguard.com`, whatever `smtp_from` resolves to) |
+
+These are the same values already configured for the DigitalOcean droplet's `mail_to_slack.py` — copy them into this Railway service's Variables tab rather than provisioning a new app registration.
 
 ### Not yet wired (future credentials)
 

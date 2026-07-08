@@ -870,7 +870,8 @@ export default function MarketingAgentDashboard() {
   const [pendingSearch, setPendingSearch] = useState("");
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const PENDING_PAGE_SIZE = 50;
-  const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
+  const [queue, setQueue] = useState<{ due: QueueEmail[]; awaitingRelease: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], awaitingRelease: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
+  const [releasing, setReleasing] = useState<Set<number>>(new Set());
   const [outreachStatus, setOutreachStatus] = useState<OutreachStatus>({ leads: [], upcoming3Days: [], recentlySent: [], bounced: [], pendingDeliverySync: 0 });
   const [syncingResend, setSyncingResend] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -1209,8 +1210,27 @@ export default function MarketingAgentDashboard() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sequence_ids: [id] }),
     });
-    showToast("Sequence approved — ready to send");
+    showToast("Sequence approved — release from the Send Queue to actually send it");
     await refreshAll();
+  };
+
+  const releaseOne = async (sequenceId: number) => {
+    setReleasing(r => new Set(r).add(sequenceId));
+    try {
+      const res = await fetch("/api/marketing/approval/release", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sequence_ids: [sequenceId] }),
+      });
+      if (res.ok) {
+        showToast("Released — touch 1 will send on the next scheduler pass");
+      } else {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error ?? "Failed to release", "#C94C4C");
+      }
+    } finally {
+      setReleasing(r => { const n = new Set(r); n.delete(sequenceId); return n; });
+    }
+    await fetchQueue();
   };
 
   const rejectOne = async (id: number) => {
@@ -1739,7 +1759,26 @@ export default function MarketingAgentDashboard() {
               </details>
             )}
 
-            {queue.due.length === 0 && queue.upcoming.length === 0 ? (
+            {queue.awaitingRelease.length > 0 && (
+              <div style={{ marginBottom: 28 }}>
+                <div style={{ fontSize: 11, color: "#C9A84C", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>Awaiting Release</div>
+                <p style={{ fontSize: 11, color: "#666", margin: "0 0 12px" }}>
+                  Approved but touch 1 has not been sent yet. Nothing goes out until you release it here.
+                </p>
+                {queue.awaitingRelease.map(item => (
+                  <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 7, marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>{item.company_name}</span>
+                    {item.contact_email && <span style={{ fontSize: 11, color: "#888" }}>{item.contact_email}</span>}
+                    <button onClick={() => releaseOne(item.sequence_id)} disabled={releasing.has(item.sequence_id)}
+                      style={{ marginLeft: "auto", background: releasing.has(item.sequence_id) ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8A7133)", border: "none", borderRadius: 5, padding: "6px 12px", color: "#0D0F14", fontSize: 11, fontWeight: 700, cursor: releasing.has(item.sequence_id) ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
+                      {releasing.has(item.sequence_id) ? "Releasing..." : "Release to Send"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {queue.due.length === 0 && queue.awaitingRelease.length === 0 && queue.upcoming.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
                 <div style={{ fontSize: 14 }}>Nothing due right now</div>

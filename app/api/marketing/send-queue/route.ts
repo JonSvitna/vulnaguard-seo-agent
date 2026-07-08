@@ -40,7 +40,11 @@ export async function GET() {
     );
 
     const due = rows.filter((r) => r.scheduled_at && new Date(r.scheduled_at) <= new Date());
-    const upcoming = rows.filter((r) => !r.scheduled_at || new Date(r.scheduled_at) > new Date());
+    // Touch 1 with no scheduled_at means the sequence was approved but never
+    // released — it's waiting on an explicit "release to send" click, not just
+    // a future date, so it's surfaced separately from genuinely upcoming touches.
+    const awaitingRelease = rows.filter((r) => r.touch_number === 1 && !r.scheduled_at);
+    const upcoming = rows.filter((r) => r.scheduled_at && new Date(r.scheduled_at) > new Date());
 
     const limitRows = await query<{ value: string }>(
       `SELECT value FROM agent_config WHERE key = 'daily_send_limit'`
@@ -61,7 +65,7 @@ export async function GET() {
        LIMIT 25`
     );
 
-    return NextResponse.json({ due, upcoming, dailyLimit, sentToday, recentSent });
+    return NextResponse.json({ due, awaitingRelease, upcoming, dailyLimit, sentToday, recentSent });
   } catch (err) {
     console.error("[marketing/send-queue]", err);
     return NextResponse.json({ error: "Failed to load send queue" }, { status: 500 });
