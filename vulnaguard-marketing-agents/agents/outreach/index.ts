@@ -186,6 +186,12 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
   let emails = parsed.emails;
   if ((lead.business_line ?? "cmmc") === "commercial_security") {
     emails = emails.map((e) => ({ ...e, body: ensureCommercialSecurityFooter(e.body) }));
+    for (const e of emails) {
+      const hit = findBannedPhrase(e.body);
+      if (hit) {
+        console.warn(`[outreach] lead ${lead.id} touch ${e.touch_number} contains banned phrase "${hit}" — review before approving`);
+      }
+    }
   }
 
   return { emails, linkedin_message: parsed.linkedin_message };
@@ -200,4 +206,37 @@ const COMMERCIAL_SECURITY_FOOTER =
 function ensureCommercialSecurityFooter(body: string): string {
   if (body.includes(COMMERCIAL_SECURITY_FOOTER)) return body;
   return `${body.trimEnd()}\n\n---\n${COMMERCIAL_SECURITY_FOOTER}`;
+}
+
+// Root-word regexes so inflected forms (circling back, touched base) still
+// get caught — the model has been observed dodging the exact-string bans.
+const BANNED_PHRASE_PATTERNS: RegExp[] = [
+  /hope this email finds you well/i,
+  /circl\w* back/i,
+  /touch\w* base/i,
+  /\breach\w* out\b/i,
+  /leverag\w*/i,
+  /synerg\w*/i,
+  /digital transformation/i,
+  /cutting-edge/i,
+  /innovative solution/i,
+  /robust solution/i,
+  /best-in-class/i,
+  /game-changer/i,
+  /seamless/i,
+  /comprehensive solution/i,
+  /disruptive/i,
+  /we are pleased to/i,
+  /our team of experts/i,
+  /we look forward to the opportunity/i,
+  /at your earliest convenience/i,
+  /per my last email/i,
+];
+
+function findBannedPhrase(body: string): string | null {
+  for (const pattern of BANNED_PHRASE_PATTERNS) {
+    const match = body.match(pattern);
+    if (match) return match[0];
+  }
+  return null;
 }
