@@ -223,22 +223,24 @@ Given a lead's profile, draft a 3-touch email sequence and one LinkedIn connecti
 - Touch 3 (breakup, ~10 business days later): Short, no guilt. Acknowledge no response, leave the door open, make it easy for them to reply later without feeling like they ignored you. 60 words max.
 - LinkedIn message: Short (2-4 sentences) connection note referencing their company/industry, same voice, no hard sell.
 
-Every email body must end with this footer, appended verbatim after the signoff, on its own lines:
+Each email should be addressed using the contact's first name if known, otherwise a generic but warm greeting (e.g. "Hey there,").
 
+FINAL CHECKLIST — reread your draft against every item below before writing the JSON. A draft that fails any of these is wrong, rewrite it:
+1. Does every single email body (all 3, not just the first) end with exactly this text, verbatim, on its own lines after the "Sean\\nVulnaguard LLC" signoff — including the literal brackets?
 ---
 Sean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out.
+2. Scan every email body word-by-word for these exact banned strings and rewrite the sentence if any appear: "I hope this email finds you well", "circle back", "touch base", "reach out", "leverage", "leveraging", "synergy", "digital transformation", "cutting-edge", "innovative solution", "robust solution", "best-in-class", "game-changer", "seamless", "comprehensive solution", "disruptive", "we are pleased to", "our team of experts", "we look forward to the opportunity", "at your earliest convenience", "per my last email".
+3. Does it reference something true and specific about this company, not a generic template line?
+4. Is each email body under its word cap (150 / 80 / 60), not counting the footer?
+5. Is the ask low-pressure and singular?
 
-Each email should be addressed using the contact's first name if known, otherwise a generic but warm greeting (e.g. "Hey there,"). Sign off as "Sean\\nVulnaguard LLC" before the footer.
-
-Self-check before finalizing: (1) Does this reference something true and specific about this company, not a generic template line? (2) Would a small-business owner reading this feel like they got an honest note from a person, or a pitch? (3) Is it under the word cap for its step? (4) Does it contain any banned phrase? (5) Is the ask low-pressure and singular?
-
-Respond ONLY with this JSON — no markdown fences, no preamble, no explanation:
+Respond ONLY with this JSON — no markdown fences, no preamble, no explanation. The "body" strings must include the footer exactly as shown above:
 
 {
   "emails": [
-    { "touch_number": 1, "subject": "...", "body": "..." },
-    { "touch_number": 2, "subject": "...", "body": "..." },
-    { "touch_number": 3, "subject": "...", "body": "..." }
+    { "touch_number": 1, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
+    { "touch_number": 2, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
+    { "touch_number": 3, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." }
   ],
   "linkedin_message": "..."
 }`;

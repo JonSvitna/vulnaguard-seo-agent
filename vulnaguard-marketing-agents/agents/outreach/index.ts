@@ -183,5 +183,21 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
     throw new Error("Missing required field in AI response: linkedin_message");
   }
 
-  return { emails: parsed.emails, linkedin_message: parsed.linkedin_message };
+  let emails = parsed.emails;
+  if ((lead.business_line ?? "cmmc") === "commercial_security") {
+    emails = emails.map((e) => ({ ...e, body: ensureCommercialSecurityFooter(e.body) }));
+  }
+
+  return { emails, linkedin_message: parsed.linkedin_message };
+}
+
+// The copywriter model doesn't reliably include the CAN-SPAM footer on every
+// touch even when instructed — this is a deterministic backstop so a real
+// send is never missing the opt-out line, regardless of what the model did.
+const COMMERCIAL_SECURITY_FOOTER =
+  "Sean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out.";
+
+function ensureCommercialSecurityFooter(body: string): string {
+  if (body.includes(COMMERCIAL_SECURITY_FOOTER)) return body;
+  return `${body.trimEnd()}\n\n---\n${COMMERCIAL_SECURITY_FOOTER}`;
 }
