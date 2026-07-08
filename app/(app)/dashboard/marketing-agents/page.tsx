@@ -29,10 +29,11 @@ interface Lead {
   updated_at: string;
 }
 
-const BUSINESS_LINE_OPTIONS = ["cmmc", "website_dev"];
+const BUSINESS_LINE_OPTIONS = ["cmmc", "website_dev", "commercial_security"];
 const BUSINESS_LINE_LABELS: Record<string, string> = {
   cmmc: "Sentinel CMMC",
   website_dev: "Website Dev",
+  commercial_security: "Commercial Security",
 };
 
 interface PendingEmail {
