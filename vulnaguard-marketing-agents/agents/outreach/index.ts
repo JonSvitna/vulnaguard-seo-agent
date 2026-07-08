@@ -219,7 +219,7 @@ function stripEmDashes(text: string): string {
 // touch even when instructed — this is a deterministic backstop so a real
 // send is never missing the opt-out line, regardless of what the model did.
 const COMMERCIAL_SECURITY_FOOTER =
-  "Sean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out.";
+  "Sean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out.";
 
 function ensureCommercialSecurityFooter(body: string): string {
   if (body.includes(COMMERCIAL_SECURITY_FOOTER)) return body;

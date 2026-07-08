@@ -229,7 +229,7 @@ Each email should be addressed using the contact's first name if known, otherwis
 FINAL CHECKLIST — reread your draft against every item below before writing the JSON. A draft that fails any of these is wrong, rewrite it:
 1. Does every single email body (all 4, not just the first) end with exactly this text, verbatim, on its own lines after the "Sean\\nVulnaguard LLC" signoff — including the literal brackets?
 ---
-Sean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out.
+Sean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out.
 2. Scan every email body word-by-word for these banned words/phrases and ANY inflected form of them (past tense, -ing, plural, etc.) — rewrite the sentence if any appear: "hope this email finds you well", "circle back" (circling back, circled back), "touch base" (touching base), "reach out", "leverage", "synergy", "digital transformation", "cutting-edge", "innovative solution", "robust solution", "best-in-class", "game-changer", "seamless", "comprehensive solution", "disruptive", "we are pleased to", "our team of experts", "we look forward to the opportunity", "at your earliest convenience", "per my last email".
 3. Does it reference something true and specific about this company, not a generic template line?
 4. Is each email body under its word cap (150 / 80 / 80 / 60), not counting the footer?
@@ -241,10 +241,10 @@ Respond ONLY with this JSON — no markdown fences, no preamble, no explanation.
 
 {
   "emails": [
-    { "touch_number": 1, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
-    { "touch_number": 2, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
-    { "touch_number": 3, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
-    { "touch_number": 4, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." }
+    { "touch_number": 1, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out." },
+    { "touch_number": 2, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out." },
+    { "touch_number": 3, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out." },
+    { "touch_number": 4, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out." }
   ],
   "linkedin_message": "..."
 }`;
