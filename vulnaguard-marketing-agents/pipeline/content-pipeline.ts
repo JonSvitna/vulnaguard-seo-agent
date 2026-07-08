@@ -44,3 +44,50 @@ export async function getContentHistory(
     [brand, limit]
   );
 }
+
+const BUFFER_PLATFORMS = ["linkedin", "facebook", "instagram"] as const;
+
+// Oldest record still missing at least one Buffer platform — replaces
+// content-bank.md as the source of truth for "what's next to post."
+export async function getNextUnposted(
+  brand = "vulnaguard"
+): Promise<ContentPipelineRecord | null> {
+  const rows = await query<ContentPipelineRecord>(
+    `SELECT * FROM content_pipeline_records
+     WHERE brand = $1
+       AND NOT (posted_platforms ?& $2::text[])
+     ORDER BY created_at ASC
+     LIMIT 1`,
+    [brand, BUFFER_PLATFORMS]
+  );
+  return rows[0] ?? null;
+}
+
+export async function markPlatformPosted(
+  id: string,
+  platform: (typeof BUFFER_PLATFORMS)[number],
+  postedAt: string = new Date().toISOString()
+): Promise<ContentPipelineRecord> {
+  const rows = await query<ContentPipelineRecord>(
+    `UPDATE content_pipeline_records
+     SET posted_platforms = posted_platforms || jsonb_build_object($2::text, $3::text)
+     WHERE id = $1
+     RETURNING *`,
+    [id, platform, postedAt]
+  );
+  return rows[0];
+}
+
+export async function markIndieHackersPosted(
+  id: string,
+  postedAt: string = new Date().toISOString()
+): Promise<ContentPipelineRecord> {
+  const rows = await query<ContentPipelineRecord>(
+    `UPDATE content_pipeline_records
+     SET posted_indiehackers_at = $2
+     WHERE id = $1
+     RETURNING *`,
+    [id, postedAt]
+  );
+  return rows[0];
+}

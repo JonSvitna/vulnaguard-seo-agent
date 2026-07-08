@@ -1,5 +1,6 @@
 import { query } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { postSlackMessage } from '@/lib/slack'
 
 interface DueEmail extends Record<string, unknown> {
   id: number
@@ -9,6 +10,7 @@ interface DueEmail extends Record<string, unknown> {
   subject: string | null
   body: string | null
   contact_email: string | null
+  company_name: string
 }
 
 export interface SendBatchResult {
@@ -56,13 +58,15 @@ export async function runSendBatch(): Promise<SendBatchResult> {
        WHERE e.status = 'drafted'
          AND s.status = 'approved'
          AND e.scheduled_at <= NOW()
+         AND e.flagged_reason IS NULL
          AND l.contact_email IS NOT NULL
          AND l.status != 'unsubscribed'
        ORDER BY e.scheduled_at ASC
        LIMIT $1
      )
      RETURNING id, sequence_id, lead_id, touch_number, subject, body,
-               (SELECT l.contact_email FROM leads l WHERE l.id = lead_id) AS contact_email`,
+               (SELECT l.contact_email FROM leads l WHERE l.id = lead_id) AS contact_email,
+               (SELECT l.company_name FROM leads l WHERE l.id = lead_id) AS company_name`,
     [remaining]
   )
 
@@ -115,6 +119,10 @@ export async function runSendBatch(): Promise<SendBatchResult> {
       [email.id, result.id ?? null]
     )
 
+    await postSlackMessage(
+      `:email: *Email sent* — touch ${email.touch_number} to *${email.company_name}* (${email.contact_email}).`
+    )
+
     const remaining_in_seq = await query(
       `SELECT id FROM emails WHERE sequence_id = $1 AND status IN ('drafted', 'sending')`,
       [email.sequence_id]
@@ -136,6 +144,12 @@ export async function runSendBatch(): Promise<SendBatchResult> {
       JSON.stringify({ total: claimed.length, sent, failed, skipped_linkedin, errors, daily_limit: dailyLimit, sent_today: sentToday + sent }),
     ]
   )
+
+  if (failed > 0) {
+    await postSlackMessage(
+      `:warning: *Send batch had failures* — ${failed} failed, ${sent} sent.\n${errors.map((e) => `• ${e}`).join('\n')}`
+    )
+  }
 
   return {
     ok: true,

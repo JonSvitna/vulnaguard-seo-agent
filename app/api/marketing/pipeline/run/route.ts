@@ -51,9 +51,9 @@ export async function POST() {
 
           for (const e of draft.emails) {
             await query(
-              `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status)
-               VALUES ($1, $2, $3, $4, $5, 'drafted')`,
-              [seqId, lead.id, e.touch_number, e.subject, e.body]
+              `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
+               VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
+              [seqId, lead.id, e.touch_number, e.subject, e.body, e.flagged_reason ?? null]
             )
           }
 

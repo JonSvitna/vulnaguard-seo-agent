@@ -5,6 +5,7 @@ export async function register() {
   const intervalMinutes = Number(process.env.SEND_BATCH_INTERVAL_MINUTES) || 15
   const { runSendBatch } = await import('@/lib/send-batch')
   const { syncResendStatus } = await import('@/lib/sync-resend-status')
+  const { checkStopReplies } = await import('@/lib/check-stop-replies')
 
   setInterval(async () => {
     try {
@@ -24,7 +25,16 @@ export async function register() {
     } catch (err) {
       console.error('[resend-status-sync] failed', err)
     }
+
+    try {
+      const stopResult = await checkStopReplies()
+      if (!stopResult.ok || stopResult.unsubscribed > 0 || stopResult.errors.length > 0) {
+        console.log('[stop-reply-check]', stopResult)
+      }
+    } catch (err) {
+      console.error('[stop-reply-check] failed', err)
+    }
   }, intervalMinutes * 60 * 1000)
 
-  console.log(`[send-batch-scheduler] started, running every ${intervalMinutes}m (includes Resend delivery status sync)`)
+  console.log(`[send-batch-scheduler] started, running every ${intervalMinutes}m (includes Resend delivery status sync + STOP-reply check)`)
 }

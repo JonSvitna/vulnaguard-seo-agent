@@ -20,6 +20,7 @@ interface EmailRow extends Record<string, unknown> {
   touch_number: number;
   subject: string | null;
   body: string | null;
+  flagged_reason: string | null;
 }
 
 interface LinkedinRow extends Record<string, unknown> {
@@ -65,17 +66,17 @@ export async function GET(req: NextRequest) {
     );
 
     const seqIds = sequences.map((s) => s.id);
-    const emailsBySeq = new Map<number, { touch_number: number; subject: string | null; body: string | null }[]>();
+    const emailsBySeq = new Map<number, { touch_number: number; subject: string | null; body: string | null; flagged_reason: string | null }[]>();
     const linkedinBySeq = new Map<number, string>();
 
     if (seqIds.length) {
       const emails = await query<EmailRow>(
-        `SELECT sequence_id, touch_number, subject, body FROM emails WHERE sequence_id = ANY($1) ORDER BY touch_number ASC`,
+        `SELECT sequence_id, touch_number, subject, body, flagged_reason FROM emails WHERE sequence_id = ANY($1) ORDER BY touch_number ASC`,
         [seqIds]
       );
       for (const e of emails) {
         if (!emailsBySeq.has(e.sequence_id)) emailsBySeq.set(e.sequence_id, []);
-        emailsBySeq.get(e.sequence_id)!.push({ touch_number: e.touch_number, subject: e.subject, body: e.body });
+        emailsBySeq.get(e.sequence_id)!.push({ touch_number: e.touch_number, subject: e.subject, body: e.body, flagged_reason: e.flagged_reason })
       }
 
       const linkedinRows = await query<LinkedinRow>(
@@ -98,6 +99,7 @@ export async function GET(req: NextRequest) {
       created_at: seq.created_at,
       emails: emailsBySeq.get(seq.id) ?? [],
       linkedin_message: linkedinBySeq.get(seq.id) ?? "",
+      has_flagged: (emailsBySeq.get(seq.id) ?? []).some((e) => !!e.flagged_reason),
     }));
 
     return NextResponse.json({ pending: result, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) });

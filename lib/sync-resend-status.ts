@@ -1,5 +1,6 @@
 import { Resend } from 'resend'
 import { query } from '@/lib/db'
+import { postSlackMessage } from '@/lib/slack'
 
 export interface SyncResendStatusResult {
   ok: boolean
@@ -12,6 +13,8 @@ export interface SyncResendStatusResult {
 interface PendingEmail extends Record<string, unknown> {
   id: number
   resend_message_id: string
+  company_name: string
+  contact_email: string | null
 }
 
 // Resend's GET /emails/:id exposes `last_event` (e.g. "delivered", "bounced",
@@ -24,10 +27,16 @@ export async function syncResendStatus(): Promise<SyncResendStatusResult> {
   }
   const resend = new Resend(apiKey)
 
-  const pending = await query<PendingEmail>(
-    `SELECT id, resend_message_id FROM emails
-     WHERE status = 'sent' AND resend_message_id IS NOT NULL AND delivered_at IS NULL AND bounced_at IS NULL
-     ORDER BY sent_at DESC
+  interface EmailWithLead extends PendingEmail {
+    lead_id: number
+  }
+
+  const pending = await query<EmailWithLead>(
+    `SELECT e.id, e.resend_message_id, e.lead_id, l.company_name, l.contact_email
+     FROM emails e
+     JOIN leads l ON l.id = e.lead_id
+     WHERE e.status = 'sent' AND e.resend_message_id IS NOT NULL AND e.delivered_at IS NULL AND e.bounced_at IS NULL
+     ORDER BY e.sent_at DESC
      LIMIT 100`
   )
 
@@ -56,6 +65,18 @@ export async function syncResendStatus(): Promise<SyncResendStatusResult> {
           [email.id, lastEvent]
         )
         bounced++
+
+        if (lastEvent === 'complained') {
+          // A spam complaint must suppress all future touches immediately, not just log the one event.
+          await query(`UPDATE leads SET status = 'unsubscribed', updated_at = NOW() WHERE id = $1`, [email.lead_id])
+          await postSlackMessage(
+            `:rotating_light: *Spam complaint* — ${email.company_name} (${email.contact_email}) marked complaint on a sent email. Lead auto-suppressed from further sends.`
+          )
+        } else {
+          await postSlackMessage(
+            `:x: *Bounce* — ${email.company_name} (${email.contact_email}) bounced.`
+          )
+        }
       }
     } catch (err) {
       errors.push(`Email ${email.id}: ${err instanceof Error ? err.message : 'sync failed'}`)

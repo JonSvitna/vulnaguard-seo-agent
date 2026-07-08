@@ -96,19 +96,21 @@ These live in the `agent_config` table and are edited from the dashboard's **Set
 | LLM Provider / Tier | `claude` / `balanced` | Header toggle — informational, both currently map to Claude calls |
 | Min Qualification Score | `6` | Threshold (0-10) above which the Qualifier marks a lead `qualified` vs `disqualified` |
 | Sequence Delay Days | `4,9` | Days after approval that touch 2 / touch 3 become due in the Send Queue |
-| Daily Send Limit | `50` | Reserved for future automated sending |
+| Daily Send Limit | `100` | Caps how many emails `runSendBatch()` will send per calendar day across all sequences (`lib/send-batch.ts`) |
 | Approval Batch Size | `10` | Reserved for future automated runs |
-| SMTP Host / Sender Email | empty | Reserved — see below |
+| SMTP Host / Sender Email | empty (`smtp_from` falls back to `outreach@vulnaguard.com`) | Real `from` address used by `lib/email.ts` for live Resend sends |
+
+### Automated sending is live, not manual-only
+
+This section previously said sending was copy-to-clipboard/manual-only — that's no longer accurate. `instrumentation.ts` runs an in-process scheduler (every `SEND_BATCH_INTERVAL_MINUTES`, default 15 min) that calls `runSendBatch()` and `syncResendStatus()` continuously. Once a sequence is approved (`app/api/marketing/approval/approve/route.ts`), touch 1 is scheduled for `NOW()` and goes out via a real Resend send within about 15 minutes, unattended. This requires a long-running process (Railway), not a serverless deploy (Vercel) — the interval will not persist reliably across serverless invocations. Set `DISABLE_SEND_BATCH_SCHEDULER=true` to fall back to manual send only.
 
 ### Not yet wired (future credentials)
-The dashboard's Settings tab lists these as placeholders for future automation — setting them currently has no effect because no code reads them yet:
 
 | Variable | Would enable |
 | --- | --- |
 | `APIFY_API_KEY` | A scraping step feeding the Scout's `extractLeads` (currently paste-text-only bulk import works without this) |
-| `SMTP_PASSWORD` (+ `smtp_host`/`smtp_from` above) | Automated sending from the Send Queue (currently: copy-to-clipboard + manual send + "Mark Sent") |
 
-If you want to wire either of these up, add the env var (`.env.local` / Railway Variables) and let me know — both have a clear integration point already designed (see `docs/superpowers/specs/` for the Scout and Sender design docs).
+If you want to wire this up, add the env var (`.env.local` / Railway Variables) and let me know — see `docs/superpowers/specs/` for the Scout design doc.
 
 ---
 

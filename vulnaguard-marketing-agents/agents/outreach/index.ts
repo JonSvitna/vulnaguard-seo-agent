@@ -197,12 +197,14 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
   if ((lead.business_line ?? "cmmc") === "commercial_security") {
     emails = emails.map((e) => ({ ...e, body: stripEmDashes(ensureCommercialSecurityFooter(e.body)) }));
     linkedinMessage = stripEmDashes(linkedinMessage);
-    for (const e of emails) {
+    emails = emails.map((e) => {
       const hit = findBannedPhrase(e.body);
       if (hit) {
-        console.warn(`[outreach] lead ${lead.id} touch ${e.touch_number} contains banned phrase "${hit}" — review before approving`);
+        console.warn(`[outreach] lead ${lead.id} touch ${e.touch_number} contains banned phrase "${hit}" — flagged, send blocked until reviewed`);
+        return { ...e, flagged_reason: `Banned phrase detected: "${hit}"` };
       }
-    }
+      return e;
+    });
   }
 
   return { emails, linkedin_message: linkedinMessage };

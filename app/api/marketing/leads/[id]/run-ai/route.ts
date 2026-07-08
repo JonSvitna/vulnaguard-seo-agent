@@ -77,9 +77,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     for (const e of draft.emails) {
       await query(
-        `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status)
-         VALUES ($1, $2, $3, $4, $5, 'drafted')`,
-        [seqId, id, e.touch_number, e.subject, e.body]
+        `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
+         VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
+        [seqId, id, e.touch_number, e.subject, e.body, e.flagged_reason ?? null]
       );
     }
 

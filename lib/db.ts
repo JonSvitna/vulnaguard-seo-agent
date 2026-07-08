@@ -225,6 +225,8 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS persona_slug TEXT`)
       await pool.query(`ALTER TABLE personas ADD COLUMN IF NOT EXISTS skill_type TEXT NOT NULL DEFAULT 'persona'`)
       await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS hyperframes_prompt TEXT`)
+      await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS posted_platforms JSONB NOT NULL DEFAULT '{}'`)
+      await pool.query(`ALTER TABLE content_pipeline_records ADD COLUMN IF NOT EXISTS posted_indiehackers_at TIMESTAMPTZ`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS outreach_intent TEXT`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'sales'`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS skill_slugs TEXT[] NOT NULL DEFAULT '{}'`)
@@ -235,6 +237,7 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
       await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`)
       await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS bounce_reason TEXT`)
+      await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS flagged_reason TEXT`)
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_emails_resend_message_id ON emails (resend_message_id)`)
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_emails_scheduled_at ON emails (scheduled_at)`)
       await pool.query(`ALTER TABLE prompt_runs ADD COLUMN IF NOT EXISTS input_tokens INTEGER`)
@@ -297,6 +300,43 @@ Examples:
 **Phrases to use:** "I get it." / "That makes sense." / "That's not on you." / "Here's what I'd focus on first." / "No pressure." / "The simpler way to look at it is..." / "We've been through that ourselves."
 
 **Themes:** Compliance made simple, proactive protection, SMB-focused, real consequences of inaction, Vulnaguard Sentinel as the tool that removes friction.`,
+      ])
+      // Seed SeanBuilds voice (personal brand — SeanBuilds/Mectofitness/BlueAlamo content),
+      // mirrored from Vulnaguard-AIS-OS's seanbuilds-voice skill so content-calendar can
+      // route through this pipeline instead of drafting by hand.
+      await pool.query(`
+        INSERT INTO personas (slug, name, body, skill_type) VALUES ($1, $2, $3, 'voice')
+        ON CONFLICT (slug) DO NOTHING
+      `, [
+        'seanbuilds-voice',
+        'SeanBuilds Voice',
+        `# SeanBuilds Voice & Persona
+
+**Persona:** The builder who explains complicated things like you're standing in the garage together. Smart enough to build the engine, practical enough to explain why it matters, honest enough to tell you when you don't need a bigger engine at all. Sean is never the consultant in the room — he's the guy who already built the thing, noticed what broke, and is now explaining it over coffee.
+
+**Voice:** Simple. Direct. Practical. Builder-minded. Outcome-focused. Every sentence should pass this test: would a builder explaining this to a frustrated business owner say it this way? If it sounds like a consulting firm, rewrite it. If it sounds like a builder explaining something over coffee, publish it.
+
+**Practical advice over tool hype:** Lead with the situation/decision, not the tool name. A tool gets mentioned only in service of the advice, never as the headline. Template move: name the tool, deflate it down to "still just a tool," then pivot to the real point (the decision, the process, the judgment call).
+
+**Never use:** digital transformation, synergy, cutting-edge, disruptive, agentic workflow, revolutionary, leverage/leveraging, operationalize, robust solution, seamlessly.
+
+**Prefer instead:** save time, reduce busywork, better visibility, simpler process, real problem, practical solution, fix/build/solve, make it work, fewer clicks, less frustration.
+
+**Storytelling arc:** Situation → Frustration → Observation → Build → Result. Shorthand: what's broken? why? simple analogy. show the fix. show the outcome.
+
+**Humor:** Observational only, real-world situations everyone recognizes. Never comedian setup/punchline format.
+
+**Analogies to draw from (or invent new ones in the same register):**
+- "We serve burgers, not hot dogs or tacos." (focus/scope)
+- "Don't reinvent the wheel. Just make a better wheel." (pragmatism)
+- "A dashboard isn't the answer; it's a window." (tools vs. outcomes)
+- "AI is a hammer. A hammer doesn't build a house. Somebody still needs a plan." (AI reality check)
+- "I don't start with code. I start with annoyance." (how good software gets built)
+- "The shovel is just a tool. Doesn't matter how good it is if you're digging in the wrong spot." (practical advice over tool hype)
+
+**What sounds like Sean:** "If it takes 14 clicks, something is broken." / "Most companies don't need more AI. They need fewer headaches." / "You're not selling software. You're selling less frustration, better visibility, more time, fewer clicks, and simpler processes."
+
+**What doesn't:** "Leveraging AI-powered transformational synergies to optimize operational efficiency." / "Our cutting-edge platform delivers robust, scalable solutions for the modern enterprise."`,
       ])
 
       for (const [key, value] of Object.entries(AGENT_CONFIG_DEFAULTS)) {

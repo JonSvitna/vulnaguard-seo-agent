@@ -35,6 +35,7 @@ export interface SequenceEmail {
   touch_number: number;
   subject: string;
   body: string;
+  flagged_reason?: string | null;
 }
 
 export interface CopywriterResult {

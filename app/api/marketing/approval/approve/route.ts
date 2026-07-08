@@ -24,33 +24,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const configRows = await query<{ value: string }>(
-      `SELECT value FROM agent_config WHERE key = 'sequence_delay_days'`
-    );
-    const delays = (configRows[0]?.value ?? "4,9,14")
-      .split(",")
-      .map((d) => Number(d.trim()))
-      .filter(Number.isFinite);
-
-    await query(
-      `UPDATE emails SET scheduled_at = NOW() WHERE sequence_id = ANY($1::int[]) AND touch_number = 1`,
-      [ids]
-    );
-
-    // Handles any touch count (3-touch cmmc/website_dev, 4-touch commercial_security,
-    // or anything else) instead of hardcoding touch_number 2/3 — a sequence with a
-    // 4th touch would otherwise leave it with scheduled_at = NULL and it would never send.
-    const touchNumbers = await query<{ touch_number: number }>(
-      `SELECT DISTINCT touch_number FROM emails WHERE sequence_id = ANY($1::int[]) AND touch_number > 1 ORDER BY touch_number`,
-      [ids]
-    );
-    for (const { touch_number } of touchNumbers) {
-      const delayDays = delays[touch_number - 2] ?? delays[delays.length - 1] ?? (touch_number - 1) * 5;
-      await query(
-        `UPDATE emails SET scheduled_at = NOW() + make_interval(days => $2) WHERE sequence_id = ANY($1::int[]) AND touch_number = $3`,
-        [ids, delayDays, touch_number]
-      );
-    }
+    // Approving only signs off on the drafted content. No email is scheduled here —
+    // that's a separate, explicit action (POST /api/marketing/approval/release) so
+    // clicking Approve can never be mistaken for "send it," and touch 2/3 delays are
+    // computed from the actual release moment instead of drifting if release happens
+    // long after approval.
 
     return NextResponse.json({ ok: true, updated: ids.length });
   } catch (err) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query } from '@/lib/db'
 import { sendEmail } from '@/lib/email'
+import { postSlackMessage } from '@/lib/slack'
 
 interface EmailRow extends Record<string, unknown> {
   id: number
@@ -12,6 +13,8 @@ interface EmailRow extends Record<string, unknown> {
   status: string
   contact_email: string | null
   company_name: string
+  lead_status: string
+  flagged_reason: string | null
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -22,7 +25,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const rows = await query<EmailRow>(
       `SELECT e.id, e.sequence_id, e.lead_id, e.touch_number, e.subject, e.body, e.status,
-              l.contact_email, l.company_name
+              e.flagged_reason, l.contact_email, l.company_name, l.status AS lead_status
        FROM emails e
        JOIN leads l ON l.id = e.lead_id
        WHERE e.id = $1`,
@@ -37,6 +40,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     if (!email.subject || !email.body) {
       return NextResponse.json({ error: 'Email has no subject or body' }, { status: 400 })
+    }
+
+    if (email.lead_status === 'unsubscribed') {
+      return NextResponse.json({ error: 'Lead has unsubscribed — send blocked' }, { status: 409 })
+    }
+
+    if (email.flagged_reason) {
+      return NextResponse.json({ error: `Draft flagged for review: ${email.flagged_reason}` }, { status: 409 })
     }
 
     if (!manual) {
@@ -71,6 +82,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!remaining.length) {
       await query(`UPDATE sequences SET status = 'sent' WHERE id = $1`, [sequence_id])
       await query(`UPDATE leads SET status = 'sent', updated_at = NOW() WHERE id = $1`, [lead_id])
+    }
+
+    if (!manual) {
+      await postSlackMessage(
+        `:email: *Email sent* — touch ${email.touch_number} to *${email.company_name}* (${email.contact_email}).`
+      )
     }
 
     return NextResponse.json({ ok: true, manual, sequence_completed: !remaining.length })
