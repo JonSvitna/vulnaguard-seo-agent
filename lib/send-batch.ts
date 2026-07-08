@@ -49,6 +49,9 @@ export async function runSendBatch(): Promise<SendBatchResult> {
 
   // Atomically claim emails — UPDATE to 'sending' WHERE still 'drafted' prevents double-send
   // under concurrent batch calls. Only email-addressable leads are claimed for sending.
+  // Touch N only goes out once touch N-1 in the same sequence actually landed as 'sent' —
+  // scheduled_at is precomputed at release time for every touch, so without this a stalled
+  // or failed earlier touch wouldn't stop a later one from firing on schedule anyway.
   const claimed = await query<DueEmail>(
     `UPDATE emails SET status = 'sending'
      WHERE id IN (
@@ -60,7 +63,13 @@ export async function runSendBatch(): Promise<SendBatchResult> {
          AND e.scheduled_at <= NOW()
          AND e.flagged_reason IS NULL
          AND l.contact_email IS NOT NULL
-         AND l.status != 'unsubscribed'
+         AND l.status NOT IN ('unsubscribed', 'replied')
+         AND NOT EXISTS (
+           SELECT 1 FROM emails prev
+           WHERE prev.sequence_id = e.sequence_id
+             AND prev.touch_number = e.touch_number - 1
+             AND prev.status != 'sent'
+         )
        ORDER BY e.scheduled_at ASC
        LIMIT $1
      )

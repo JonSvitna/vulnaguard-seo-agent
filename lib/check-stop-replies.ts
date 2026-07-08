@@ -4,7 +4,10 @@ import { postSlackMessage } from '@/lib/slack'
 import { fetchMailSince } from '@/lib/ms365-graph'
 
 const CURSOR_KEY = 'ms365_mail_cursor'
-const STOP_RE = /\bstop\b/i
+// Literal CAN-SPAM "STOP" plus the common plain-English ways people decline —
+// any of these in a reply means "don't email this lead again."
+const STOP_RE =
+  /\bstop\b|\bunsubscribe\b|\bopt(-|\s)?out\b|not interested|no thanks|no thank you|please remove|remove me|take me off|do not (contact|email)|don't (contact|email)/i
 
 export interface CheckStopRepliesResult {
   ok: boolean
@@ -29,10 +32,11 @@ async function setCursor(iso: string): Promise<void> {
 }
 
 // Polls the M365 mailbox that outbound outreach replies land in, and for any
-// reply from a known lead whose body/subject contains "stop", suppresses that
-// lead the same way the manual opt-out endpoint does. This is the automated
-// backstop for CAN-SPAM's "Reply STOP to opt out" footer promise — without it,
-// opt-outs only happen if a human notices the reply in time.
+// reply from a known lead whose body/subject contains "stop" or a common
+// decline phrase (unsubscribe, not interested, remove me, ...), suppresses
+// that lead the same way the manual opt-out endpoint does. This is the
+// automated backstop for CAN-SPAM's "Reply STOP to opt out" footer promise —
+// without it, opt-outs only happen if a human notices the reply in time.
 export async function checkStopReplies(): Promise<CheckStopRepliesResult> {
   if (!process.env.MS365_CLIENT_ID || !process.env.MS365_TENANT_ID || !process.env.MS365_CLIENT_SECRET || !process.env.MS365_USER_UPN) {
     return { ok: false, checked: 0, unsubscribed: 0, errors: ['MS365 credentials are not set — STOP-reply auto-detection is disabled'] }
@@ -77,7 +81,7 @@ export async function checkStopReplies(): Promise<CheckStopRepliesResult> {
       if (!ack.ok) errors.push(`Ack email to ${sender} failed: ${ack.error}`)
 
       await postSlackMessage(
-        `:no_entry_sign: *STOP reply detected* — ${lead.company_name} (${sender}) replied "STOP" and was auto-removed from outreach.`
+        `:no_entry_sign: *Opt-out reply detected* — ${lead.company_name} (${sender}) declined and was auto-removed from outreach.`
       )
       unsubscribed++
     } catch (err) {

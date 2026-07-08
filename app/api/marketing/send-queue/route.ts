@@ -27,6 +27,22 @@ interface SentRow extends Record<string, unknown> {
 
 export async function GET() {
   try {
+    // Self-healing cleanup: a lead with no email address can never clear the
+    // email send queue (batch send skips it, and it sits there touch after
+    // touch for the life of the sequence). Demote it out of the active
+    // pipeline instead of letting it clog Due/Upcoming with nothing actionable.
+    await query(
+      `UPDATE leads SET status = 'no_email', updated_at = NOW()
+       WHERE contact_email IS NULL
+         AND status NOT IN ('unsubscribed', 'no_email')
+         AND id IN (SELECT DISTINCT lead_id FROM emails WHERE status = 'drafted')`
+    );
+    await query(
+      `UPDATE emails SET status = 'cancelled'
+       WHERE status = 'drafted'
+         AND lead_id IN (SELECT id FROM leads WHERE contact_email IS NULL)`
+    );
+
     const rows = await query<QueueRow>(
       `SELECT e.id, e.sequence_id, e.lead_id, e.touch_number, e.subject, e.body, e.scheduled_at,
               l.company_name, l.contact_name, l.contact_email, l.contact_linkedin,
@@ -35,7 +51,7 @@ export async function GET() {
        JOIN sequences s ON s.id = e.sequence_id
        JOIN leads l ON l.id = e.lead_id
        LEFT JOIN linkedin_messages lm ON lm.sequence_id = e.sequence_id AND e.touch_number = 1
-       WHERE e.status = 'drafted' AND s.status = 'approved'
+       WHERE e.status = 'drafted' AND s.status = 'approved' AND l.contact_email IS NOT NULL
        ORDER BY e.scheduled_at ASC NULLS LAST`
     );
 

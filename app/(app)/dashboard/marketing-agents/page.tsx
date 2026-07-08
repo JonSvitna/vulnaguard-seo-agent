@@ -175,7 +175,7 @@ function statusColor(status: string) {
   const map: Record<string, string> = {
     discovered: "#4C8EC9", qualified: "#C9A84C", drafted: "#7C6AC4",
     approved: "#4CC98E", sent: "#4CC98E", replied: "#C9A84C",
-    disqualified: "#666", rejected: "#666", unsubscribed: "#C94C4C",
+    disqualified: "#666", rejected: "#666", unsubscribed: "#C94C4C", no_email: "#C9843C",
   };
   return map[status] || "#666";
 }
@@ -187,7 +187,7 @@ function daysUntil(dateStr: string | null) {
 }
 
 const TIERS = ["fast", "balanced", "powerful"];
-const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed"];
+const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed", "no_email"];
 const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral"];
 const CATEGORY_LABELS: Record<string, string> = {
   sales: "Sales", partnership: "Partnership", relationship_building: "Relationship Building", referral: "Referral",
