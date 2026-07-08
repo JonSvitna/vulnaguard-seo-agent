@@ -5,6 +5,14 @@ import type { OutreachLead, QualifierResult, ClassifierResult, CopywriterResult 
 
 const VALID_CATEGORIES = ["sales", "partnership", "relationship_building", "referral"];
 
+// Expected email count per business line — the copywriter prompt for each
+// line dictates its own touch count, this just validates the model matched it.
+const TOUCH_COUNT: Record<string, number> = {
+  cmmc: 3,
+  website_dev: 3,
+  commercial_security: 4,
+};
+
 function leadProfile(lead: OutreachLead): string {
   return `Company: ${lead.company_name}
 Website: ${lead.website ?? "unknown"}
@@ -176,8 +184,9 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
   const raw = await callAI('copywriter', systemPrompt, userContent, 4000, lead.id ?? null);
   const parsed = parseJson(raw) as Partial<CopywriterResult>;
 
-  if (!Array.isArray(parsed.emails) || parsed.emails.length !== 3) {
-    throw new Error("Missing required field in AI response: emails");
+  const expectedTouchCount = TOUCH_COUNT[lead.business_line ?? "cmmc"] ?? 3;
+  if (!Array.isArray(parsed.emails) || parsed.emails.length !== expectedTouchCount) {
+    throw new Error(`Missing required field in AI response: emails (expected ${expectedTouchCount})`);
   }
   if (typeof parsed.linkedin_message !== "string") {
     throw new Error("Missing required field in AI response: linkedin_message");

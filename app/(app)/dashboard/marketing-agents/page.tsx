@@ -572,7 +572,8 @@ function SequenceEditorModal({ leadId, companyName, initialDraft, currentPersona
         if (data.emails?.length) {
           const byTouch: Record<number, PendingEmail> = {};
           for (const e of data.emails) byTouch[e.touch_number] = { touch_number: e.touch_number, subject: e.subject ?? "", body: e.body ?? "" };
-          setEmails([1, 2, 3].map(n => byTouch[n] ?? { touch_number: n, subject: "", body: "" }));
+          const touchCount = Math.max(3, data.emails.length);
+          setEmails(Array.from({ length: touchCount }, (_, i) => i + 1).map(n => byTouch[n] ?? { touch_number: n, subject: "", body: "" }));
         }
         if (data.linkedin_message?.message) setLinkedinMessage(data.linkedin_message.message);
       } finally {

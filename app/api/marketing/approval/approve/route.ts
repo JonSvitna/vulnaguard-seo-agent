@@ -27,24 +27,30 @@ export async function POST(req: NextRequest) {
     const configRows = await query<{ value: string }>(
       `SELECT value FROM agent_config WHERE key = 'sequence_delay_days'`
     );
-    const delays = (configRows[0]?.value ?? "4,9").split(",").map((d) => Number(d.trim()));
-    const [delay2, delay3] = [
-      Number.isFinite(delays[0]) ? delays[0] : 4,
-      Number.isFinite(delays[1]) ? delays[1] : 9,
-    ];
+    const delays = (configRows[0]?.value ?? "4,9,14")
+      .split(",")
+      .map((d) => Number(d.trim()))
+      .filter(Number.isFinite);
 
     await query(
       `UPDATE emails SET scheduled_at = NOW() WHERE sequence_id = ANY($1::int[]) AND touch_number = 1`,
       [ids]
     );
-    await query(
-      `UPDATE emails SET scheduled_at = NOW() + make_interval(days => $2) WHERE sequence_id = ANY($1::int[]) AND touch_number = 2`,
-      [ids, delay2]
+
+    // Handles any touch count (3-touch cmmc/website_dev, 4-touch commercial_security,
+    // or anything else) instead of hardcoding touch_number 2/3 — a sequence with a
+    // 4th touch would otherwise leave it with scheduled_at = NULL and it would never send.
+    const touchNumbers = await query<{ touch_number: number }>(
+      `SELECT DISTINCT touch_number FROM emails WHERE sequence_id = ANY($1::int[]) AND touch_number > 1 ORDER BY touch_number`,
+      [ids]
     );
-    await query(
-      `UPDATE emails SET scheduled_at = NOW() + make_interval(days => $2) WHERE sequence_id = ANY($1::int[]) AND touch_number = 3`,
-      [ids, delay3]
-    );
+    for (const { touch_number } of touchNumbers) {
+      const delayDays = delays[touch_number - 2] ?? delays[delays.length - 1] ?? (touch_number - 1) * 5;
+      await query(
+        `UPDATE emails SET scheduled_at = NOW() + make_interval(days => $2) WHERE sequence_id = ANY($1::int[]) AND touch_number = $3`,
+        [ids, delayDays, touch_number]
+      );
+    }
 
     return NextResponse.json({ ok: true, updated: ids.length });
   } catch (err) {

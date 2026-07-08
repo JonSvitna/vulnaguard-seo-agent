@@ -217,23 +217,25 @@ HARD RULES (a draft that breaks any of these fails):
 
 PHRASES TO USE: "I noticed..." / "That's not unusual, most companies your size..." / "No pressure, just want to understand what you're working with" / "Happy to send a short example instead of a call" / "If this isn't a priority right now, no worries" / "What's up?" / "I'm in the chat if you want to talk it through"
 
-Given a lead's profile, draft a 3-touch email sequence and one LinkedIn connection message:
+Given a lead's profile, draft a 4-touch email sequence and one LinkedIn connection message:
 - Touch 1 (intro): One sentence on who you are (Vulnaguard, what you do, in plain terms). Then what you noticed about them specifically, stated plainly, not as a gotcha. Then what you can offer, stated as a scoped, concrete thing, not "a comprehensive solution." End with one low-pressure ask (short call or offer to send something instead). 150 words max.
 - Touch 2 (follow-up, ~5 business days later): One short paragraph referencing the intro specifically. Offer something concrete (a one-pager, a direct answer) rather than a generic "just checking in." 80 words max.
-- Touch 3 (breakup, ~10 business days later): Short, no guilt. Acknowledge no response, leave the door open, make it easy for them to reply later without feeling like they ignored you. 60 words max.
+- Touch 3 (follow-up, ~10 business days later): A different angle than touch 2 — a different concrete pain point or offer, not a repeat of the same ask reworded. 80 words max.
+- Touch 4 (breakup, ~15 business days later): Short, no guilt. Acknowledge no response, leave the door open, make it easy for them to reply later without feeling like they ignored you. 60 words max.
 - LinkedIn message: Short (2-4 sentences) connection note referencing their company/industry, same voice, no hard sell.
 
 Each email should be addressed using the contact's first name if known, otherwise a generic but warm greeting (e.g. "Hey there,").
 
 FINAL CHECKLIST — reread your draft against every item below before writing the JSON. A draft that fails any of these is wrong, rewrite it:
-1. Does every single email body (all 3, not just the first) end with exactly this text, verbatim, on its own lines after the "Sean\\nVulnaguard LLC" signoff — including the literal brackets?
+1. Does every single email body (all 4, not just the first) end with exactly this text, verbatim, on its own lines after the "Sean\\nVulnaguard LLC" signoff — including the literal brackets?
 ---
 Sean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out.
 2. Scan every email body word-by-word for these banned words/phrases and ANY inflected form of them (past tense, -ing, plural, etc.) — rewrite the sentence if any appear: "hope this email finds you well", "circle back" (circling back, circled back), "touch base" (touching base), "reach out", "leverage", "synergy", "digital transformation", "cutting-edge", "innovative solution", "robust solution", "best-in-class", "game-changer", "seamless", "comprehensive solution", "disruptive", "we are pleased to", "our team of experts", "we look forward to the opportunity", "at your earliest convenience", "per my last email".
 3. Does it reference something true and specific about this company, not a generic template line?
-4. Is each email body under its word cap (150 / 80 / 60), not counting the footer?
+4. Is each email body under its word cap (150 / 80 / 80 / 60), not counting the footer?
 5. Is the ask low-pressure and singular?
 6. Does any email or the LinkedIn message contain an em dash (—) anywhere, including in a signoff? Remove it and use a period or comma instead.
+7. Are touch 2 and touch 3 actually different angles, not the same follow-up reworded twice?
 
 Respond ONLY with this JSON — no markdown fences, no preamble, no explanation. The "body" strings must include the footer exactly as shown above:
 
@@ -241,7 +243,8 @@ Respond ONLY with this JSON — no markdown fences, no preamble, no explanation.
   "emails": [
     { "touch_number": 1, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
     { "touch_number": 2, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
-    { "touch_number": 3, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." }
+    { "touch_number": 3, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." },
+    { "touch_number": 4, "subject": "...", "body": "...\\n\\nSean\\nVulnaguard LLC\\n\\n---\\nSean Murrill | Vulnaguard LLC | [VULNAGUARD MAILING ADDRESS - REPLACE BEFORE SENDING] | Reply STOP to opt out." }
   ],
   "linkedin_message": "..."
 }`;
