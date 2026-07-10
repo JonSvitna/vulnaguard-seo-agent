@@ -25,8 +25,29 @@ Given a raw input, respond ONLY with this JSON — no markdown fences, no preamb
     "points": ["point 1", "point 2", "point 3"],
     "cta": "closing line",
     "style": "signal"
+  },
+  "storyboard": {
+    "beats": [
+      {
+        "order": 0,
+        "kind": "hook | point | cta",
+        "content": "the line of video_brief this beat covers",
+        "start_sec": 0,
+        "duration_sec": 4,
+        "graphic": "CornerCard | SideList | WordStack | none"
+      }
+    ],
+    "total_duration_sec": 45,
+    "hyperframes_recommended": false,
+    "hyperframes_reason": "one sentence, or null"
   }
-}`;
+}
+
+STORYBOARD RULES:
+- One beat per video_brief.hook, each video_brief.points entry, and video_brief.cta, in that order. Beats must not overlap (each beat's start_sec >= the previous beat's start_sec + duration_sec) and total_duration_sec must equal the last beat's start_sec + duration_sec.
+- graphic: use "SideList" when a beat is enumerating several related items in one breath, "WordStack" for a single emphatic word/phrase moment, "CornerCard" as the general default, "none" when a beat needs no on-screen graphic.
+- hyperframes_recommended: default false (Remotion's fixed template is the default render path). Only set true when this specific video calls for HyperFrames' caption-pill/karaoke-style overlay treatment (e.g. dense word-for-word captioned delivery), not for ordinary talking-head content. If true, hyperframes_reason must give one concrete sentence why; if false, hyperframes_reason must be null.
+- If a "design concepts you can reuse" block is present below, prefer reusing its palette/graphic choices over inventing new ones, unless they clearly don't fit this content.`;
 
 // Kept for backwards compat — used as fallback when no voice skill is selected
 export const VULNAGUARD_SYSTEM_PROMPT = `You are Sean's personal content engine for Vulnaguard — a web application security and compliance intelligence company with a product called Sentinel.

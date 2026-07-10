@@ -12,8 +12,8 @@ export async function runContentPipeline(
   const rows = await query<ContentPipelineRecord>(
     `INSERT INTO content_pipeline_records
        (brand, capture_mode, raw_input, core_idea, linkedin, instagram,
-        facebook, youtube_desc, youtube_short, video_brief)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        facebook, youtube_desc, youtube_short, video_brief, storyboard, voice_skill_slug)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       input.brand ?? "vulnaguard",
@@ -26,6 +26,8 @@ export async function runContentPipeline(
       generated.youtube_desc,
       generated.youtube_short,
       JSON.stringify(generated.video_brief),
+      generated.storyboard ? JSON.stringify(generated.storyboard) : null,
+      input.voiceSkillSlug ?? null,
     ]
   );
 

@@ -14,6 +14,24 @@ export interface VideoBrief {
   style: string;
 }
 
+export type StoryboardGraphic = "CornerCard" | "SideList" | "WordStack" | "none";
+
+export interface StoryboardBeat {
+  order: number;
+  kind: "hook" | "point" | "cta";
+  content: string;
+  start_sec: number;
+  duration_sec: number;
+  graphic: StoryboardGraphic;
+}
+
+export interface Storyboard {
+  beats: StoryboardBeat[];
+  total_duration_sec: number;
+  hyperframes_recommended: boolean;
+  hyperframes_reason: string | null;
+}
+
 export interface GeneratedContent {
   core_idea: string;
   linkedin: string;
@@ -22,6 +40,9 @@ export interface GeneratedContent {
   youtube_desc: string;
   youtube_short: string;
   video_brief: VideoBrief;
+  // null when the LLM's storyboard failed shape validation — callers must fall back
+  // to the pre-storyboard even-spacing render behavior rather than treat this as an error.
+  storyboard: Storyboard | null;
 }
 
 export interface ContentPipelineInput {
@@ -43,6 +64,8 @@ export interface ContentPipelineRecord {
   youtube_desc: string;
   youtube_short: string;
   video_brief: VideoBrief;
+  storyboard: Storyboard | null;
+  voice_skill_slug: string | null;
   video_script: string | null;
   hyperframes_prompt: string | null;
   created_at: Date;
