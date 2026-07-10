@@ -1,0 +1,28 @@
+<h2>How hard should we park SEO + Content?</h2>
+<p class="subtitle">Email CRM is the face of the product. Pick how buried the old SEO/Content stuff gets.</p>
+
+<div class="options">
+  <div class="option" data-choice="nav-gone" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Gone from nav</h3>
+      <p>No sidebar links. Routes still work if you know the URL (<code>/dashboard</code>, <code>/content-pipeline</code>). Cleanest daily experience.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="advanced-section" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>“Advanced / Tools” section</h3>
+      <p>Collapsed footer group in the sidebar: SEO Agent, Content. Out of the way but one click if you need them.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="feature-flag" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Feature flag / env toggle</h3>
+      <p>Completely hidden unless <code>ENABLE_SEO_TOOLS=true</code>. Default off in production. Strongest “this is an email CRM” signal.</p>
+    </div>
+  </div>
+</div>
