@@ -166,6 +166,7 @@ export function Dashboard({ content, onReset, error, voiceSkillSlug }: Dashboard
           <VideoCard
             brief={content.video_brief}
             script={script}
+            storyboard={content.storyboard}
             onGenerate={generateScript}
             generating={scriptGenerating}
           />

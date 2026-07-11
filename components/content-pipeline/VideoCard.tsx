@@ -1,16 +1,73 @@
 "use client";
 
 import { useState } from "react";
-import type { VideoBrief } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
+import type { VideoBrief, Storyboard } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
 
 interface VideoCardProps {
   brief: VideoBrief;
   script: string | null;
+  storyboard?: Storyboard | null;
   onGenerate: () => void;
   generating: boolean;
 }
 
-export function VideoCard({ brief, script, onGenerate, generating }: VideoCardProps) {
+const GRAPHIC_COLORS: Record<string, string> = {
+  CornerCard: "#3DDC97",
+  SideList: "#5B8DEF",
+  WordStack: "#F2C94C",
+  none: "#6B7A99",
+};
+
+function formatTime(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = Math.round(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function StoryboardPanel({ storyboard }: { storyboard: Storyboard }) {
+  if (!storyboard) return null;
+  return (
+    <div className="bg-[#111827] rounded-lg p-4 border border-[#1F2D45] mb-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-[#C9A84C] text-xs font-bold uppercase tracking-wider">
+          Storyboard
+        </div>
+        <div className="text-[#6B7A99] text-xs">{formatTime(storyboard.total_duration_sec)} total</div>
+      </div>
+
+      {storyboard.hyperframes_recommended && (
+        <div className="mb-3 px-3 py-2 rounded-lg text-xs" style={{ background: "#5B8DEF15", border: "1px solid #5B8DEF44", color: "#5B8DEF" }}>
+          <strong>Flagged for HyperFrames</strong>
+          {storyboard.hyperframes_reason ? ` — ${storyboard.hyperframes_reason}` : ""}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {storyboard.beats.map((beat) => (
+          <div key={beat.order} className="flex items-start gap-2.5">
+            <span
+              className="text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full mt-0.5 shrink-0"
+              style={{
+                color: GRAPHIC_COLORS[beat.graphic] ?? "#6B7A99",
+                border: `1px solid ${GRAPHIC_COLORS[beat.graphic] ?? "#6B7A99"}55`,
+              }}
+            >
+              {beat.graphic}
+            </span>
+            <div className="flex-1">
+              <div className="text-white text-sm leading-relaxed">{beat.content}</div>
+              <div className="text-[#6B7A99] text-xs mt-0.5">
+                {formatTime(beat.start_sec)}–{formatTime(beat.start_sec + beat.duration_sec)} · {beat.kind}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function VideoCard({ brief, script, storyboard, onGenerate, generating }: VideoCardProps) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -49,6 +106,14 @@ export function VideoCard({ brief, script, onGenerate, generating }: VideoCardPr
           </div>
         ))}
       </div>
+
+      {storyboard ? (
+        <StoryboardPanel storyboard={storyboard} />
+      ) : (
+        <div className="text-[#6B7A99] text-xs px-1 mb-4">
+          No storyboard for this record (older row, or the LLM's storyboard failed validation — falls back to even beat spacing on render).
+        </div>
+      )}
 
       {script ? (
         <div className="space-y-3">
