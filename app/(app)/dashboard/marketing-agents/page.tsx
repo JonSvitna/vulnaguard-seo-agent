@@ -189,6 +189,12 @@ function daysUntil(dateStr: string | null) {
 const TIERS = ["fast", "balanced", "powerful"];
 const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed", "no_email"];
 const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral"];
+type ContactFilter = "all" | "has_email" | "no_email";
+
+function leadHasEmail(email: string | null | undefined): boolean {
+  return !!(email && email.trim());
+}
+
 const CATEGORY_LABELS: Record<string, string> = {
   sales: "Sales", partnership: "Partnership", relationship_building: "Relationship Building", referral: "Referral",
 };
@@ -867,6 +873,7 @@ export default function MarketingAgentDashboard() {
   const [pendingTotal, setPendingTotal] = useState(0);
   const [pendingTotalPages, setPendingTotalPages] = useState(1);
   const [pendingBusinessLine, setPendingBusinessLine] = useState("all");
+  const [pendingContactFilter, setPendingContactFilter] = useState<ContactFilter>("all");
   const [pendingSearch, setPendingSearch] = useState("");
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const PENDING_PAGE_SIZE = 50;
@@ -882,6 +889,7 @@ export default function MarketingAgentDashboard() {
   const [leadFilter, setLeadFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [businessLineFilter, setBusinessLineFilter] = useState("all");
+  const [contactFilter, setContactFilter] = useState<ContactFilter>("all");
   const [leadSearch, setLeadSearch] = useState("");
   const [leadSelected, setLeadSelected] = useState<Set<number>>(new Set());
   const [leadSort, setLeadSort] = useState<{ key: LeadSortKey | null; direction: "asc" | "desc" | null }>({ key: null, direction: null });
@@ -1103,6 +1111,8 @@ export default function MarketingAgentDashboard() {
   const fetchPending = useCallback(async () => {
     const params = new URLSearchParams({ page: String(pendingPage), limit: String(PENDING_PAGE_SIZE) });
     if (pendingBusinessLine !== "all") params.set("business_line", pendingBusinessLine);
+    if (pendingContactFilter === "has_email") params.set("has_email", "true");
+    if (pendingContactFilter === "no_email") params.set("has_email", "false");
     if (pendingSearch.trim()) params.set("search", pendingSearch.trim());
     const res = await fetch(`/api/marketing/approval/pending?${params.toString()}`);
     if (res.ok) {
@@ -1111,7 +1121,7 @@ export default function MarketingAgentDashboard() {
       setPendingTotal(data.total ?? 0);
       setPendingTotalPages(data.totalPages ?? 1);
     }
-  }, [pendingPage, pendingBusinessLine, pendingSearch]);
+  }, [pendingPage, pendingBusinessLine, pendingContactFilter, pendingSearch]);
 
   const fetchQueue = useCallback(async () => {
     const res = await fetch("/api/marketing/send-queue");
@@ -1430,6 +1440,8 @@ export default function MarketingAgentDashboard() {
     if (leadFilter !== "all" && lead.status !== leadFilter) return false;
     if (categoryFilter !== "all" && lead.category !== categoryFilter) return false;
     if (businessLineFilter !== "all" && lead.business_line !== businessLineFilter) return false;
+    if (contactFilter === "has_email" && !leadHasEmail(lead.contact_email)) return false;
+    if (contactFilter === "no_email" && leadHasEmail(lead.contact_email)) return false;
     return true;
   });
 
@@ -1658,6 +1670,14 @@ export default function MarketingAgentDashboard() {
                   <button key={b} onClick={() => { setPendingBusinessLine(b); setPendingPage(1); }}
                     style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${pendingBusinessLine === b ? "rgba(76,201,142,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: pendingBusinessLine === b ? "rgba(76,201,142,0.1)" : "transparent", color: pendingBusinessLine === b ? "#4CC98E" : "#666", cursor: "pointer" }}>
                     {b === "all" ? "all lines" : BUSINESS_LINE_LABELS[b]}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["all", "has_email", "no_email"] as ContactFilter[]).map(c => (
+                  <button key={c} onClick={() => { setPendingContactFilter(c); setPendingPage(1); }}
+                    style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${pendingContactFilter === c ? "rgba(76,168,201,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: pendingContactFilter === c ? "rgba(76,168,201,0.1)" : "transparent", color: pendingContactFilter === c ? "#4CA8C9" : "#666", cursor: "pointer" }}>
+                    {c === "all" ? "All contacts" : c === "has_email" ? "Has email" : "No email"}
                   </button>
                 ))}
               </div>
@@ -2134,6 +2154,14 @@ export default function MarketingAgentDashboard() {
                     <button key={b} onClick={() => { setBusinessLineFilter(b); setLeadsPage(1); }}
                       style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${businessLineFilter === b ? "rgba(76,201,142,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: businessLineFilter === b ? "rgba(76,201,142,0.1)" : "transparent", color: businessLineFilter === b ? "#4CC98E" : "#666", cursor: "pointer" }}>
                       {b === "all" ? "all lines" : BUSINESS_LINE_LABELS[b]}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["all", "has_email", "no_email"] as ContactFilter[]).map(c => (
+                    <button key={c} onClick={() => { setContactFilter(c); setLeadsPage(1); }}
+                      style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${contactFilter === c ? "rgba(76,168,201,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: contactFilter === c ? "rgba(76,168,201,0.1)" : "transparent", color: contactFilter === c ? "#4CA8C9" : "#666", cursor: "pointer" }}>
+                      {c === "all" ? "All contacts" : c === "has_email" ? "Has email" : "No email"}
                     </button>
                   ))}
                 </div>
