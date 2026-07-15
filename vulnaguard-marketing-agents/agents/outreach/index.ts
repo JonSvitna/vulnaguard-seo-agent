@@ -1,6 +1,7 @@
 import { QUALIFIER_PROMPTS, COPYWRITER_PROMPTS, CATEGORY_CONTEXT, CLASSIFIER_PROMPT } from "./systemPrompts";
 import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import { query } from "@/lib/db";
+import { ensureCommercialSecurityFooter, rewriteCommercialFooterBody } from "../../../lib/marketing/commercial-footer";
 import type { OutreachLead, QualifierResult, ClassifierResult, CopywriterResult } from "./types";
 
 const VALID_CATEGORIES = ["sales", "partnership", "relationship_building", "referral"];
@@ -195,7 +196,10 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
   let emails = parsed.emails;
   let linkedinMessage = parsed.linkedin_message;
   if ((lead.business_line ?? "cmmc") === "commercial_security") {
-    emails = emails.map((e) => ({ ...e, body: stripEmDashes(ensureCommercialSecurityFooter(e.body)) }));
+    emails = emails.map((e) => ({
+      ...e,
+      body: stripEmDashes(rewriteCommercialFooterBody(e.body) ?? ensureCommercialSecurityFooter(e.body)),
+    }));
     linkedinMessage = stripEmDashes(linkedinMessage);
     emails = emails.map((e) => {
       const hit = findBannedPhrase(e.body);
@@ -215,17 +219,6 @@ export async function draftSequence(lead: OutreachLead, personaSlug?: string | n
 // a pure character swap, unlike banned-phrase rewrites which need judgment.
 function stripEmDashes(text: string): string {
   return text.replace(/\s*—\s*/g, ", ").replace(/^, /, "");
-}
-
-// The copywriter model doesn't reliably include the CAN-SPAM footer on every
-// touch even when instructed — this is a deterministic backstop so a real
-// send is never missing the opt-out line, regardless of what the model did.
-const COMMERCIAL_SECURITY_FOOTER =
-  "Sean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out.";
-
-function ensureCommercialSecurityFooter(body: string): string {
-  if (body.includes(COMMERCIAL_SECURITY_FOOTER)) return body;
-  return `${body.trimEnd()}\n\n---\n${COMMERCIAL_SECURITY_FOOTER}`;
 }
 
 // Root-word regexes so inflected forms (circling back, touched base) still
