@@ -88,7 +88,7 @@ New script: `scripts/rewrite-commercial-footers.mjs`
 
 - Lead `business_line = 'commercial_security'` (or draft known to contain the old footer)
 - Lead has non-empty `contact_email`
-- Email row status is unsent (`drafted` or approved-but-not-sent — whatever statuses mean “still editable before/during queue”; exclude `sent` and cancelled)
+- Email row `status IN ('drafted', 'sending')` (sequence may already be `approved`; email stays `drafted` until Resend succeeds). Exclude `sent` and any cancelled rows.
 - Body contains the old pipe footer (or `---` + old line)
 
 **Action**
