@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
     const offset = (page - 1) * limit;
     const businessLine = req.nextUrl.searchParams.get("business_line");
     const search = req.nextUrl.searchParams.get("search")?.trim();
+    const hasEmailParam = req.nextUrl.searchParams.get("has_email");
 
     const filters: string[] = ["s.status = 'drafted'"];
     const params: unknown[] = [];
@@ -45,6 +46,11 @@ export async function GET(req: NextRequest) {
     if (search) {
       params.push(`%${search}%`);
       filters.push(`l.company_name ILIKE $${params.length}`);
+    }
+    if (hasEmailParam === "true") {
+      filters.push(`NULLIF(TRIM(l.contact_email), '') IS NOT NULL`);
+    } else if (hasEmailParam === "false") {
+      filters.push(`NULLIF(TRIM(l.contact_email), '') IS NULL`);
     }
     const whereClause = filters.join(" AND ");
 
