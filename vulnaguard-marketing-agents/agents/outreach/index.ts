@@ -1,7 +1,7 @@
 import { QUALIFIER_PROMPTS, COPYWRITER_PROMPTS, CATEGORY_CONTEXT, CLASSIFIER_PROMPT } from "./systemPrompts";
 import { getProviderForAgent, makeOpenAIClient, makeAnthropicClient } from "@/lib/ai-provider";
 import { query } from "@/lib/db";
-import { ensureCommercialSecurityFooter, rewriteCommercialFooterBody } from "../../../lib/marketing/commercial-footer";
+import { ensureCommercialSecurityFooter, rewriteCommercialFooterBody } from "@/lib/marketing/commercial-footer";
 import type { OutreachLead, QualifierResult, ClassifierResult, CopywriterResult } from "./types";
 
 const VALID_CATEGORIES = ["sales", "partnership", "relationship_building", "referral"];

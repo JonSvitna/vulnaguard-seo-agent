@@ -188,15 +188,37 @@ function stripEmDashes(text) {
   return text.replace(/\s*—\s*/g, ", ").replace(/^, /, "");
 }
 
-// The copywriter model doesn't reliably include the CAN-SPAM footer on every
+// The copywriter model doesn't reliably include the soft-legal opt-out footer on every
 // touch even when instructed — this is a deterministic backstop so a real
 // send is never missing the opt-out line, regardless of what the model did.
+const OLD_COMMERCIAL_SECURITY_FOOTER =
+  "Sean Murrill | Vulnaguard LLC | 980 Joshua Tree Ct, Owings Mills, MD 21117 | Reply STOP to opt out.";
+
 const COMMERCIAL_SECURITY_FOOTER =
   'Vulnaguard LLC · Owings Mills, MD\nIf you\'d rather not hear from us, reply "unsubscribe".';
 
 function ensureCommercialSecurityFooter(body) {
   if (body.includes(COMMERCIAL_SECURITY_FOOTER)) return body;
   return `${body.trimEnd()}\n\n${COMMERCIAL_SECURITY_FOOTER}`;
+}
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Replace legacy pipe STOP footer with soft legal.
+ * Returns null if the old footer is not present (caller should skip).
+ */
+function rewriteCommercialFooterBody(body) {
+  if (!body.includes(OLD_COMMERCIAL_SECURITY_FOOTER)) return null;
+  let next = body;
+  const oldBlock = new RegExp(
+    `(?:\\n*---\\n*)?${escapeRegExp(OLD_COMMERCIAL_SECURITY_FOOTER)}`,
+    "g"
+  );
+  next = next.replace(oldBlock, "").trimEnd();
+  return ensureCommercialSecurityFooter(next);
 }
 
 // Root-word regexes so inflected forms (circling back, touched base) still
@@ -306,7 +328,7 @@ async function draftSequence(pool, lead, defaultVoiceSlug) {
   let emails = parsed.emails;
   let linkedinMessage = parsed.linkedin_message;
   if ((lead.business_line ?? "cmmc") === "commercial_security") {
-    emails = emails.map((e) => ({ ...e, body: stripEmDashes(ensureCommercialSecurityFooter(e.body)) }));
+    emails = emails.map((e) => ({ ...e, body: stripEmDashes(rewriteCommercialFooterBody(e.body) ?? ensureCommercialSecurityFooter(e.body)) }));
     linkedinMessage = stripEmDashes(linkedinMessage);
     emails = emails.map((e) => {
       const hit = findBannedPhrase(e.body);
