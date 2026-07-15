@@ -42,3 +42,5 @@ next-env.d.ts
 
 # brainstorm companion sessions
 .superpowers/
+
+.worktrees/
