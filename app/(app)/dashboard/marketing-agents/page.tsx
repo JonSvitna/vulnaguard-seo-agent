@@ -877,8 +877,7 @@ export default function MarketingAgentDashboard() {
   const [pendingSearch, setPendingSearch] = useState("");
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
   const PENDING_PAGE_SIZE = 50;
-  const [queue, setQueue] = useState<{ due: QueueEmail[]; awaitingRelease: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], awaitingRelease: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
-  const [releasing, setReleasing] = useState<Set<number>>(new Set());
+  const [queue, setQueue] = useState<{ due: QueueEmail[]; upcoming: QueueEmail[]; dailyLimit: number; sentToday: number; recentSent: SentEmail[] }>({ due: [], upcoming: [], dailyLimit: 50, sentToday: 0, recentSent: [] });
   const [outreachStatus, setOutreachStatus] = useState<OutreachStatus>({ leads: [], upcoming3Days: [], recentlySent: [], bounced: [], pendingDeliverySync: 0 });
   const [syncingResend, setSyncingResend] = useState(false);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -1216,31 +1215,13 @@ export default function MarketingAgentDashboard() {
   const approveOne = async (id: number) => {
     setPending(p => p.filter(s => s.id !== id));
     setSelected(s => { const n = new Set(s); n.delete(id); return n; });
-    await fetch("/api/marketing/approval/approve", {
+    const res = await fetch("/api/marketing/approval/approve", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sequence_ids: [id] }),
     });
-    showToast("Sequence approved — release from the Send Queue to actually send it");
+    const data = await res.json().catch(() => ({}));
+    showToast(data.sent ? "Approved — email sent" : "Approved — sending");
     await refreshAll();
-  };
-
-  const releaseOne = async (sequenceId: number) => {
-    setReleasing(r => new Set(r).add(sequenceId));
-    try {
-      const res = await fetch("/api/marketing/approval/release", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sequence_ids: [sequenceId] }),
-      });
-      if (res.ok) {
-        showToast("Released — touch 1 will send on the next scheduler pass");
-      } else {
-        const data = await res.json().catch(() => ({}));
-        showToast(data.error ?? "Failed to release", "#C94C4C");
-      }
-    } finally {
-      setReleasing(r => { const n = new Set(r); n.delete(sequenceId); return n; });
-    }
-    await fetchQueue();
   };
 
   const rejectOne = async (id: number) => {
@@ -1258,11 +1239,29 @@ export default function MarketingAgentDashboard() {
     const ids = [...selected];
     setPending(p => p.filter(s => !ids.includes(s.id)));
     setSelected(new Set());
-    await fetch("/api/marketing/approval/approve", {
+    const res = await fetch("/api/marketing/approval/approve", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sequence_ids: ids }),
     });
-    showToast(`${ids.length} sequences approved`);
+    const data = await res.json().catch(() => ({}));
+    showToast(`${data.approved ?? ids.length} approved — ${data.sent ?? 0} sent`);
+    await refreshAll();
+  };
+
+  // Approve & send every drafted sequence that has an email address, in one shot.
+  const approveAllDrafted = async () => {
+    if (!confirm("Approve and send ALL drafted sequences that have an email address?")) return;
+    setSelected(new Set());
+    const res = await fetch("/api/marketing/approval/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`${data.approved ?? 0} approved — ${data.sent ?? 0} sent`);
+    } else {
+      showToast(data.error ?? "Failed to approve all", "#C94C4C");
+    }
     await refreshAll();
   };
 
@@ -1660,6 +1659,9 @@ export default function MarketingAgentDashboard() {
                       Approve {selected.size} selected
                     </button>
                   )}
+                  <button onClick={approveAllDrafted} style={{ background: "linear-gradient(135deg, #4CC98E, #2E8B57)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    Approve &amp; send all drafted
+                  </button>
                 </div>
               )}
             </div>
@@ -1779,26 +1781,7 @@ export default function MarketingAgentDashboard() {
               </details>
             )}
 
-            {queue.awaitingRelease.length > 0 && (
-              <div style={{ marginBottom: 28 }}>
-                <div style={{ fontSize: 11, color: "#C9A84C", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4 }}>Awaiting Release</div>
-                <p style={{ fontSize: 11, color: "#666", margin: "0 0 12px" }}>
-                  Approved but touch 1 has not been sent yet. Nothing goes out until you release it here.
-                </p>
-                {queue.awaitingRelease.map(item => (
-                  <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.3)", borderRadius: 7, marginBottom: 8 }}>
-                    <span style={{ fontSize: 13, color: "#fff", fontWeight: 600 }}>{item.company_name}</span>
-                    {item.contact_email && <span style={{ fontSize: 11, color: "#888" }}>{item.contact_email}</span>}
-                    <button onClick={() => releaseOne(item.sequence_id)} disabled={releasing.has(item.sequence_id)}
-                      style={{ marginLeft: "auto", background: releasing.has(item.sequence_id) ? "rgba(201,168,76,0.3)" : "linear-gradient(135deg, #C9A84C, #8A7133)", border: "none", borderRadius: 5, padding: "6px 12px", color: "#0D0F14", fontSize: 11, fontWeight: 700, cursor: releasing.has(item.sequence_id) ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}>
-                      {releasing.has(item.sequence_id) ? "Releasing..." : "Release to Send"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {queue.due.length === 0 && queue.awaitingRelease.length === 0 && queue.upcoming.length === 0 ? (
+            {queue.due.length === 0 && queue.upcoming.length === 0 ? (
               <div style={{ textAlign: "center", padding: "60px 0", color: "#444" }}>
                 <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
                 <div style={{ fontSize: 14 }}>Nothing due right now</div>

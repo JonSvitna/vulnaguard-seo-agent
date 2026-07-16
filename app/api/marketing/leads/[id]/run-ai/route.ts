@@ -52,6 +52,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       return NextResponse.json({ lead, draft: null });
     }
 
+    // Email-only outreach: never draft for a lead we can't email, even one that was
+    // already marked 'qualified' before this rule existed. Demote it to 'no_email'.
+    if (!lead.contact_email?.trim()) {
+      const rows = await query<OutreachLead>(
+        `UPDATE leads SET status = 'no_email', updated_at = NOW() WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      return NextResponse.json({ lead: rows[0] ?? { ...lead, status: "no_email" }, draft: null });
+    }
+
     const personaSlug = ("persona_slug" in body ? body.persona_slug : lead.persona_slug) as string | null;
     const outreachIntent = ("outreach_intent" in body ? body.outreach_intent : lead.outreach_intent) ?? null;
     let skillSlugs = ("skill_slugs" in body ? body.skill_slugs : lead.skill_slugs) as string[] | null;

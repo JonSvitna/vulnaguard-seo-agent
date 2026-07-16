@@ -1,4 +1,16 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Vulnaguard Lead Outreach
+
+Email-only lead outreach. Import leads → qualify (leads without an email address are
+parked in `no_email` and never scored) → draft a multi-touch email sequence → **Approve**
+to send. Approving schedules touch 1 for immediate send, schedules the follow-up drip
+touches, and fires the send batch right away — there is no separate "release" step.
+Follow-up touches are sent automatically by the background scheduler in
+`instrumentation.ts`.
+
+The former SEO agent, content pipeline, and video-brief tooling have been removed; this
+app now does one thing: qualify email-bearing leads and send outreach.
+
+This is a [Next.js](https://nextjs.org) project.
 
 ## Getting Started
 
@@ -26,20 +38,22 @@ Set these via `.env.local` or your deployment platform's environment settings (a
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `ANTHROPIC_API_KEY` | Yes* | Powers the SEO agent using Claude models. |
-| `OPENAI_API_KEY` | Yes* | Alternative provider — powers the agent using GPT-4o. Switch providers with the dashboard's provider selector. |
-| `GITHUB_TOKEN` | Yes | Personal access token (`repo` scope) for reading/writing site files. |
-| `PEXELS_API_KEY` | No | Used by M6 to source blog post images. |
-| `GSC_CLIENT_ID` / `GSC_CLIENT_SECRET` / `GSC_REFRESH_TOKEN` | No | OAuth credentials for Google Search Console ranking data (M2). |
-| `DATABASE_URL` | Yes (on Railway) | Postgres connection string used for session + result persistence. Auto-injected when you attach Railway's Postgres plugin. |
+| `ANTHROPIC_API_KEY` | Yes* | Powers the lead qualifier and email copywriter (Claude models). |
+| `OPENAI_API_KEY` | Yes* | Alternative provider — GPT models. Switch providers per agent on the Settings page. |
+| `RESEND_API_KEY` | Yes | Sends outreach email via Resend. Without it, sends fail. |
+| `DATABASE_URL` | Yes (on Railway) | Postgres connection string for leads/sequences/send history. Auto-injected when you attach Railway's Postgres plugin. |
+| `SEND_BATCH_INTERVAL_MINUTES` | No | How often the background scheduler sends due drip touches (default 15). |
+| `DISABLE_SEND_BATCH_SCHEDULER` | No | Set to `true` to turn off the background send/drip scheduler. |
 | `PGSSLMODE` | No | Set to `disable` only for local non-SSL Postgres. Railway-managed Postgres requires SSL (default). |
+
+Slack (`lib/slack.ts`) and Microsoft Graph (`lib/ms365-graph.ts`, for STOP-reply detection) use their own env vars where configured.
 
 ## Deploy on Railway
 
 1. Create a new Railway project from this repo. Nixpacks picks up `railway.json` — `npm ci && npm run build` for build, `npm run start` for runtime (binds to `$PORT`).
-2. Add the **Postgres** plugin. Railway injects `DATABASE_URL` automatically; the schema (sessions, messages, results, inventory) is created on first request.
-3. Set `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`, plus `GITHUB_TOKEN`, in the service's Variables tab.
-4. Railway redeploys on push. Sessions and pending file outputs survive deploys because they live in Postgres, not the container filesystem.
+2. Add the **Postgres** plugin. Railway injects `DATABASE_URL` automatically; the marketing schema (leads, sequences, emails, personas) is created on first request.
+3. Set `ANTHROPIC_API_KEY` and/or `OPENAI_API_KEY`, plus `RESEND_API_KEY`, in the service's Variables tab.
+4. Railway redeploys on push. Leads, drafts, and send history survive deploys because they live in Postgres, not the container filesystem.
 
 ### Persistence layer
 

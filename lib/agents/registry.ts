@@ -1,8 +1,6 @@
 import { qualifyLead, draftSequence } from "@/vulnaguard-marketing-agents/agents/outreach";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 import { extractLeads } from "@/vulnaguard-marketing-agents/agents/scout";
-import { runContentPipelineAgent } from "@/vulnaguard-marketing-agents/agents/content-pipeline";
-import type { ContentPipelineInput } from "@/vulnaguard-marketing-agents/agents/content-pipeline/types";
 
 export interface AgentDefinition<TInput, TOutput> {
   name: string;
@@ -29,12 +27,6 @@ export const AGENT_REGISTRY: Record<string, AnyAgentDefinition> = {
     name: "scout",
     description: "Extracts up to 25 candidate leads from raw pasted text.",
     run: (input) => extractLeads((input as { rawText: string }).rawText),
-  },
-
-  "content-pipeline": {
-    name: "content-pipeline",
-    description: "Turns a raw idea into multi-platform social content and a video brief.",
-    run: (input) => runContentPipelineAgent(input as ContentPipelineInput),
   },
 };
 

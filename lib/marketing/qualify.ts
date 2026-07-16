@@ -4,6 +4,17 @@ import { classifyLeadCategory } from "@/vulnaguard-marketing-agents/agents/outre
 import type { OutreachLead, QualifierResult } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 
 export async function qualifyAndUpdateLead(lead: OutreachLead): Promise<OutreachLead> {
+  // Email-only outreach: a lead with no email address can never be contacted, so
+  // don't spend a scoring/classification call on it. Park it in 'no_email' and
+  // return — it never becomes qualified, drafted, or sent.
+  if (!lead.contact_email?.trim()) {
+    const rows = await query<OutreachLead>(
+      `UPDATE leads SET status = 'no_email', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [lead.id]
+    );
+    return rows[0] ?? { ...lead, status: "no_email" };
+  }
+
   // Re-classify category at scoring time instead of trusting the single
   // batch-wide category picked at import — mixed CSV uploads (e.g. a
   // government cert list) contain a blend of sales/partnership/referral

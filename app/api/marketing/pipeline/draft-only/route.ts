@@ -14,8 +14,18 @@ export async function POST(req: NextRequest) {
     const businessLine: string = body.business_line ?? 'website_dev'
     const limit: number = Number(body.limit) || 100
 
+    // Email-only outreach: demote any no-email discovered leads out of the pipeline
+    // first, then draft only the ones we can actually contact.
+    await query(
+      `UPDATE leads SET status = 'no_email', updated_at = NOW()
+       WHERE status = 'discovered' AND business_line = $1 AND NULLIF(TRIM(contact_email), '') IS NULL`,
+      [businessLine]
+    )
+
     const leads = await query<OutreachLead>(
-      `SELECT * FROM leads WHERE status = 'discovered' AND business_line = $1 ORDER BY created_at ASC LIMIT $2`,
+      `SELECT * FROM leads WHERE status = 'discovered' AND business_line = $1
+         AND NULLIF(TRIM(contact_email), '') IS NOT NULL
+       ORDER BY created_at ASC LIMIT $2`,
       [businessLine, limit]
     )
 

@@ -4,9 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV = [
-  { href: "/dashboard", icon: "⬡", label: "Agent" },
-  { href: "/dashboard/marketing-agents", icon: "📣", label: "Marketing" },
-  { href: "/content-pipeline", icon: "✦", label: "Content" },
+  { href: "/dashboard/marketing-agents", icon: "📣", label: "Leads" },
   { href: "/dashboard/activity", icon: "🕓", label: "Activity" },
   { href: "/settings", icon: "⚙", label: "Settings" },
 ];
@@ -25,7 +23,7 @@ export function Sidebar() {
         </div>
         <div>
           <div className="text-sm font-bold tracking-wide text-white">VULNAGUARD</div>
-          <div className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">SEO Agent</div>
+          <div className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">Lead Outreach</div>
         </div>
       </div>
 
