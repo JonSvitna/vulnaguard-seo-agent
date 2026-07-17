@@ -47,6 +47,7 @@ export default function Settings() {
   const [dbStatus, setDbStatus] = useState<{ ok: boolean; error?: string } | null>(null)
   const [aiConfig, setAiConfig] = useState<AIProviderRow[]>([])
   const [aiSaving, setAiSaving] = useState<string | null>(null)
+  const [resendConfigured, setResendConfigured] = useState<boolean | null>(null)
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -95,6 +96,13 @@ export default function Settings() {
       .then(res => res.json())
       .then(data => setDbStatus(data))
       .catch(err => setDbStatus({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' }))
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/marketing/config')
+      .then(res => res.json())
+      .then(data => setResendConfigured(!!data.resend_configured))
+      .catch(() => setResendConfigured(false))
   }, [])
 
   const handleSave = () => {
@@ -165,6 +173,11 @@ export default function Settings() {
                 <div>
                   <label className="text-sm font-semibold text-white">{s.label}</label>
                   <p className="text-xs text-gray-500 mt-0.5">{s.help}</p>
+                  {s.key === 'RESEND_API_KEY' && (
+                    <p className="text-[10px] mt-1 font-bold" style={{ color: resendConfigured === null ? '#666' : resendConfigured ? '#4CC98E' : '#C94C4C' }}>
+                      {resendConfigured === null ? 'CHECKING SERVER…' : resendConfigured ? '● LIVE ON SERVER (Railway)' : '● NOT SET ON SERVER — emails will not send'}
+                    </p>
+                  )}
                 </div>
                 {s.link && (
                   <a href={s.link} target="_blank" rel="noopener" className="text-[10px] text-[#C9A84C] hover:underline whitespace-nowrap ml-4">
