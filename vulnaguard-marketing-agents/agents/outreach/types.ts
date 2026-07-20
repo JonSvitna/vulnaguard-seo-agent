@@ -19,6 +19,11 @@ export interface OutreachLead {
   category?: string | null;
   business_line?: string | null;
   skill_slugs?: string[] | null;
+  batch_id?: string | null;
+  source_detail?: string | null;
+  fit_score?: number | null;
+  fit_reason?: string | null;
+  recommended_service?: string | null;
 }
 
 export interface QualifierResult {

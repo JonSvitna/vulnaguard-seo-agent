@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "test": "tsx --test lib/marketing/*.test.mjs vulnaguard-marketing-agents/agents/outreach/*.test.mjs",
     "start": "next start -p ${PORT:-3000}",
     "lint": "eslint"
   },
@@ -35,6 +36,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.9",
     "tailwindcss": "^4",
+    "tsx": "^4.23.1",
     "typescript": "^5"
   }
 }

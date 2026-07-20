@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query, ensureSchema } from '@/lib/db'
-import { draftSequence } from '@/vulnaguard-marketing-agents/agents/outreach'
+import { draftLeadIds, summarizeDraftLeadResults } from '@/lib/marketing/draft-leads'
 import type { OutreachLead } from '@/vulnaguard-marketing-agents/agents/outreach/types'
 
 // For business lines with no qualifier rubric yet (anything besides 'cmmc'),
@@ -33,43 +33,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, message: 'No discovered leads for this business line', processed: 0 })
     }
 
-    let drafted = 0
-    let errors = 0
-
-    for (const lead of leads) {
-      try {
-        const draft = await draftSequence(lead, null, null, null)
-
-        await query(`DELETE FROM sequences WHERE lead_id = $1`, [lead.id])
-        const seqs = await query<{ id: number }>(
-          `INSERT INTO sequences (lead_id, status) VALUES ($1, 'drafted') RETURNING id`,
-          [lead.id]
-        )
-        const seqId = seqs[0].id
-
-        for (const e of draft.emails) {
-          await query(
-            `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
-             VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
-            [seqId, lead.id, e.touch_number, e.subject, e.body, e.flagged_reason ?? null]
-          )
-        }
-
-        if (draft.linkedin_message?.trim()) {
-          await query(
-            `INSERT INTO linkedin_messages (sequence_id, lead_id, message, status)
-             VALUES ($1, $2, $3, 'drafted')`,
-            [seqId, lead.id, draft.linkedin_message]
-          )
-        }
-
-        await query(`UPDATE leads SET status = 'drafted', updated_at = NOW() WHERE id = $1`, [lead.id])
-        drafted++
-      } catch (err) {
-        console.error('[pipeline/draft-only] draft failed for lead', lead.id, err)
-        errors++
-      }
-    }
+    const results = await draftLeadIds(leads.map((lead) => lead.id))
+    const { drafted, errors, skipped, skipped_reasons } = summarizeDraftLeadResults(results)
 
     await query(
       `INSERT INTO pipeline_runs (agent, status, leads_processed, details, finished_at)
@@ -77,11 +42,11 @@ export async function POST(req: NextRequest) {
       [
         errors === 0 ? 'success' : 'error',
         leads.length,
-        JSON.stringify({ business_line: businessLine, drafted, errors }),
+        JSON.stringify({ business_line: businessLine, drafted, errors, skipped, skipped_reasons }),
       ]
     )
 
-    return NextResponse.json({ ok: true, processed: leads.length, drafted, errors })
+    return NextResponse.json({ ok: true, processed: leads.length, drafted, errors, skipped, skipped_reasons })
   } catch (err) {
     console.error('[marketing/pipeline/draft-only]', err)
     return NextResponse.json({ error: 'Draft-only pipeline run failed' }, { status: 500 })
