@@ -210,6 +210,7 @@ const AGENT_CONFIG_DEFAULTS: Record<string, string> = {
   sequence_delay_days: '4,9',
   daily_send_limit: '500',
   batch_size: '10',
+  clay_fit_min_score: '70',
   smtp_host: '',
   smtp_from: '',
 }
@@ -233,6 +234,14 @@ export async function ensureSchema(): Promise<void> {
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_leads_category ON leads (category)`)
       await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS business_line TEXT NOT NULL DEFAULT 'cmmc'`)
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_leads_business_line ON leads (business_line)`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS batch_id TEXT`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS source_detail TEXT`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS fit_score INTEGER`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS fit_reason TEXT`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS recommended_service TEXT`)
+      await pool.query(`ALTER TABLE leads ADD COLUMN IF NOT EXISTS external_source_id TEXT`)
+      await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS leads_source_external_id_uidx ON leads (source, external_source_id) WHERE external_source_id IS NOT NULL`)
+      await pool.query(`CREATE INDEX IF NOT EXISTS leads_batch_id_idx ON leads (batch_id)`)
       await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS resend_message_id TEXT`)
       await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMPTZ`)
       await pool.query(`ALTER TABLE emails ADD COLUMN IF NOT EXISTS bounced_at TIMESTAMPTZ`)
