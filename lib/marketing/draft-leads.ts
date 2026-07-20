@@ -49,24 +49,24 @@ export async function draftLeadIds(
       results.push({ leadId, status: 'skipped', reason: 'not_found' })
       continue
     }
-    if (lead.status === 'drafted') {
-      results.push({ leadId, status: 'skipped', reason: 'already_drafted' })
-      continue
-    }
-    if (lead.status !== 'discovered') {
-      results.push({ leadId, status: 'skipped', reason: 'ineligible_status' })
-      continue
-    }
-    if (!lead.contact_email?.trim()) {
-      await deps.query(
-        `UPDATE leads SET status = 'no_email', updated_at = NOW() WHERE id = $1`,
-        [leadId],
-      )
-      results.push({ leadId, status: 'skipped', reason: 'missing_email' })
-      continue
-    }
-
     try {
+      if (lead.status === 'drafted') {
+        results.push({ leadId, status: 'skipped', reason: 'already_drafted' })
+        continue
+      }
+      if (lead.status !== 'discovered') {
+        results.push({ leadId, status: 'skipped', reason: 'ineligible_status' })
+        continue
+      }
+      if (!lead.contact_email?.trim()) {
+        await deps.query(
+          `UPDATE leads SET status = 'no_email', updated_at = NOW() WHERE id = $1`,
+          [leadId],
+        )
+        results.push({ leadId, status: 'skipped', reason: 'missing_email' })
+        continue
+      }
+
       const draft = await deps.draftSequence(lead, null, null, null)
 
       await deps.query(`DELETE FROM sequences WHERE lead_id = $1`, [leadId])
@@ -98,7 +98,11 @@ export async function draftLeadIds(
       )
       results.push({ leadId, status: 'drafted' })
     } catch (error) {
-      deps.onError?.(leadId, error)
+      try {
+        deps.onError?.(leadId, error)
+      } catch {
+        // Error reporting must not abort the remaining lead drafts.
+      }
       results.push({
         leadId,
         status: 'failed',
