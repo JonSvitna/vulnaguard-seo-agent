@@ -1,5 +1,24 @@
 import { timingSafeEqual } from 'node:crypto'
 
+type Comparator = (left: NodeJS.ArrayBufferView, right: NodeJS.ArrayBufferView) => boolean
+
+export function constantTimeEqual(
+  left: string,
+  right: string,
+  comparator: Comparator = timingSafeEqual,
+): boolean {
+  const leftBytes = Buffer.from(left)
+  const rightBytes = Buffer.from(right)
+  const paddedLength = Math.max(leftBytes.length, rightBytes.length, 1)
+  const paddedLeft = Buffer.alloc(paddedLength)
+  const paddedRight = Buffer.alloc(paddedLength)
+  leftBytes.copy(paddedLeft)
+  rightBytes.copy(paddedRight)
+
+  const contentsMatch = comparator(paddedLeft, paddedRight)
+  return contentsMatch && leftBytes.length === rightBytes.length
+}
+
 export function isMarketingAutomationAuthorized(
   request: Pick<Request, 'headers'>,
   configuredSecret: string | undefined = process.env.MARKETING_AUTOMATION_SECRET,
@@ -10,10 +29,5 @@ export function isMarketingAutomationAuthorized(
   const match = authorization?.match(/^Bearer ([^\s]+)$/)
   if (!match) return false
 
-  const expected = Buffer.from(configuredSecret)
-  const received = Buffer.from(match[1])
-  const comparable = Buffer.alloc(expected.length)
-  received.copy(comparable, 0, 0, expected.length)
-
-  return received.length === expected.length && timingSafeEqual(comparable, expected)
+  return constantTimeEqual(match[1], configuredSecret)
 }
