@@ -59,7 +59,13 @@ function normalizeEmail(value: string): string {
   const localPart = email.slice(0, atIndex);
   const domain = email.slice(atIndex + 1);
   const dotAtom = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/i;
-  if (atIndex <= 0 || !dotAtom.test(localPart) || !isValidDomain(domain)) {
+  if (
+    atIndex <= 0 ||
+    localPart.length > 64 ||
+    email.length > 254 ||
+    !dotAtom.test(localPart) ||
+    !isValidDomain(domain)
+  ) {
     throw new TypeError('email must be a valid email address');
   }
   return email;
