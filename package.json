@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "test": "tsx --test lib/marketing/*.test.mjs",
+    "test": "tsx --test lib/marketing/*.test.mjs vulnaguard-marketing-agents/agents/outreach/*.test.mjs",
     "start": "next start -p ${PORT:-3000}",
     "lint": "eslint"
   },
