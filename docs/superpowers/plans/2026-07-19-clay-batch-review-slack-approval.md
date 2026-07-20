@@ -178,7 +178,7 @@ export async function draftLeadIds(
 
 - [ ] Keep `draft-only/route.ts` as a thin wrapper.
 
-- [ ] Run `node --test lib/marketing/draft-leads.test.mjs` and `npm run lint`.
+- [ ] Run `npx tsx --test lib/marketing/draft-leads.test.mjs` and `npm run lint`.
 
 Expected: PASS and no new lint errors.
 

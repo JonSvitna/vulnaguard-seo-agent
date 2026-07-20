@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { query, ensureSchema } from '@/lib/db'
-import { draftLeadIds } from '@/lib/marketing/draft-leads'
+import { draftLeadIds, summarizeDraftLeadResults } from '@/lib/marketing/draft-leads'
 import type { OutreachLead } from '@/vulnaguard-marketing-agents/agents/outreach/types'
 
 // For business lines with no qualifier rubric yet (anything besides 'cmmc'),
@@ -34,8 +34,7 @@ export async function POST(req: NextRequest) {
     }
 
     const results = await draftLeadIds(leads.map((lead) => lead.id))
-    const drafted = results.filter((result) => result.status === 'drafted').length
-    const errors = results.filter((result) => result.status === 'failed').length
+    const { drafted, errors, skipped, skipped_reasons } = summarizeDraftLeadResults(results)
 
     await query(
       `INSERT INTO pipeline_runs (agent, status, leads_processed, details, finished_at)
@@ -43,11 +42,11 @@ export async function POST(req: NextRequest) {
       [
         errors === 0 ? 'success' : 'error',
         leads.length,
-        JSON.stringify({ business_line: businessLine, drafted, errors }),
+        JSON.stringify({ business_line: businessLine, drafted, errors, skipped, skipped_reasons }),
       ]
     )
 
-    return NextResponse.json({ ok: true, processed: leads.length, drafted, errors })
+    return NextResponse.json({ ok: true, processed: leads.length, drafted, errors, skipped, skipped_reasons })
   } catch (err) {
     console.error('[marketing/pipeline/draft-only]', err)
     return NextResponse.json({ error: 'Draft-only pipeline run failed' }, { status: 500 })

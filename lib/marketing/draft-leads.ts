@@ -23,8 +23,28 @@ export interface DraftLeadDependencies {
 
 export type DraftLeadResult =
   | { leadId: number; status: 'drafted' }
-  | { leadId: number; status: 'skipped'; reason: 'already_drafted' | 'ineligible_status' | 'missing_email' | 'not_found' }
+  | { leadId: number; status: 'skipped'; reason: 'already_drafted' | 'ineligible_status' | 'missing_email' | 'not_found' | 'lead_changed_retry' }
   | { leadId: number; status: 'failed'; reason: 'draft_generation_failed' | 'persistence_failed' }
+
+export interface DraftLeadSummary {
+  drafted: number
+  errors: number
+  skipped: number
+  skipped_reasons: Record<string, number>
+}
+
+export function summarizeDraftLeadResults(results: DraftLeadResult[]): DraftLeadSummary {
+  const summary: DraftLeadSummary = { drafted: 0, errors: 0, skipped: 0, skipped_reasons: {} }
+  for (const result of results) {
+    if (result.status === 'drafted') summary.drafted++
+    if (result.status === 'failed') summary.errors++
+    if (result.status === 'skipped') {
+      summary.skipped++
+      summary.skipped_reasons[result.reason] = (summary.skipped_reasons[result.reason] ?? 0) + 1
+    }
+  }
+  return summary
+}
 
 async function transaction<T>(work: (transactionQuery: Query) => Promise<T>): Promise<T> {
   const client = await getPool().connect()
@@ -125,7 +145,9 @@ export async function draftLeadIds(
           )
           return { leadId, status: 'skipped', reason: 'missing_email' } as DraftLeadResult
         }
-        if (!draft) throw new Error('Draft was not generated for an eligible lead')
+        if (!draft) {
+          return { leadId, status: 'skipped', reason: 'lead_changed_retry' } as DraftLeadResult
+        }
 
         await transactionQuery(`DELETE FROM sequences WHERE lead_id = $1`, [leadId])
         const sequences = await transactionQuery<{ id: number }>(
