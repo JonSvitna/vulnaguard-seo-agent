@@ -44,9 +44,21 @@ function optionalString(input: Record<string, unknown>, key: string): string | u
   return value.trim();
 }
 
+function isValidDomain(value: string): boolean {
+  if (value.length > 253 || value.endsWith('.') || value.includes('..')) return false;
+  const labels = value.split('.');
+  if (labels.length < 2 || labels.every((label) => /^\d+$/.test(label))) return false;
+  return labels.every(
+    (label) => label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label),
+  );
+}
+
 function normalizeEmail(value: string): string {
   const email = value.toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+  const atIndex = email.lastIndexOf('@');
+  const localPart = email.slice(0, atIndex);
+  const domain = email.slice(atIndex + 1);
+  if (atIndex <= 0 || localPart.includes('@') || /\s/.test(localPart) || !isValidDomain(domain)) {
     throw new TypeError('email must be a valid email address');
   }
   return email;
@@ -55,8 +67,9 @@ function normalizeEmail(value: string): string {
 function normalizeDomain(value: string): string {
   try {
     const url = new URL(/^https?:\/\//i.test(value) ? value : `https://${value}`);
-    if (url.username || url.password || !url.hostname.includes('.')) throw new Error('invalid');
-    return url.hostname.toLowerCase().replace(/^www\./, '');
+    const domain = url.hostname.toLowerCase().replace(/^www\./, '');
+    if (url.username || url.password || !isValidDomain(domain)) throw new Error('invalid');
+    return domain;
   } catch {
     throw new TypeError('website must contain a valid domain');
   }
@@ -77,7 +90,7 @@ export function normalizeClayLead(input: unknown): NormalizedClayLead {
   }
 
   const service = row.recommended_service;
-  if (typeof service !== 'string' || !(service in CLAY_SERVICE_TO_BUSINESS_LINE)) {
+  if (typeof service !== 'string' || !Object.hasOwn(CLAY_SERVICE_TO_BUSINESS_LINE, service)) {
     throw new TypeError('recommended service is not supported');
   }
   const recommendedService = service as ClayService;
