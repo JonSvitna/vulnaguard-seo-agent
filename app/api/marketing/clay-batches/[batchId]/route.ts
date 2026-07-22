@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { getClayBatchSummary, productionDependencies } from '@/lib/marketing/batch-approval'
+import { buildClaySlackMessage } from '@/lib/marketing/clay-slack'
 import { isMarketingAutomationAuthorized } from '@/lib/marketing/service-auth'
 
 export const runtime = 'nodejs'
@@ -28,10 +29,16 @@ export async function GET(request: NextRequest, context: RouteContext): Promise<
 
   try {
     const summary = await getClayBatchSummary(batchId, productionDependencies)
-    return NextResponse.json(summary, {
-      status: 200,
-      headers: { 'Cache-Control': 'no-store' },
-    })
+    return NextResponse.json(
+      {
+        ...summary,
+        slack_message: buildClaySlackMessage(summary),
+      },
+      {
+        status: 200,
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    )
   } catch (error) {
     console.error('[marketing/clay-batches]', error)
     return NextResponse.json(
