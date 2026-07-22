@@ -1,95 +1,117 @@
-import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { NextRequest, NextResponse } from 'next/server'
+import { query } from '@/lib/db'
 
 interface SeqRow extends Record<string, unknown> {
-  id: number;
-  lead_id: number;
-  status: string;
-  created_at: string;
-  company_name: string;
-  location: string | null;
-  cmmc_level_sought: string | null;
-  score: number;
-  contact_name: string | null;
-  contact_email: string | null;
-  business_line: string;
+  id: number
+  lead_id: number
+  status: string
+  created_at: string
+  company_name: string
+  location: string | null
+  cmmc_level_sought: string | null
+  score: number
+  contact_name: string | null
+  contact_email: string | null
+  business_line: string
+  category: string | null
+  batch_id: string | null
+  fit_score: number | null
+  fit_reason: string | null
+  recommended_service: string | null
+  website: string | null
 }
 
 interface EmailRow extends Record<string, unknown> {
-  sequence_id: number;
-  touch_number: number;
-  subject: string | null;
-  body: string | null;
-  flagged_reason: string | null;
+  sequence_id: number
+  touch_number: number
+  subject: string | null
+  body: string | null
+  flagged_reason: string | null
 }
 
 interface LinkedinRow extends Record<string, unknown> {
-  sequence_id: number;
-  message: string;
+  sequence_id: number
+  message: string
 }
 
 export async function GET(req: NextRequest) {
   try {
-    const page = Math.max(1, Number(req.nextUrl.searchParams.get("page")) || 1);
-    const limit = Math.min(200, Math.max(1, Number(req.nextUrl.searchParams.get("limit")) || 50));
-    const offset = (page - 1) * limit;
-    const businessLine = req.nextUrl.searchParams.get("business_line");
-    const search = req.nextUrl.searchParams.get("search")?.trim();
-    const hasEmailParam = req.nextUrl.searchParams.get("has_email");
+    const page = Math.max(1, Number(req.nextUrl.searchParams.get('page')) || 1)
+    const limit = Math.min(200, Math.max(1, Number(req.nextUrl.searchParams.get('limit')) || 50))
+    const offset = (page - 1) * limit
+    const businessLine = req.nextUrl.searchParams.get('business_line')
+    const search = req.nextUrl.searchParams.get('search')?.trim()
+    const hasEmailParam = req.nextUrl.searchParams.get('has_email')
+    const category = req.nextUrl.searchParams.get('category')?.trim()
+    const batchId = req.nextUrl.searchParams.get('batch_id')?.trim()
 
-    const filters: string[] = ["s.status = 'drafted'"];
-    const params: unknown[] = [];
-    if (businessLine && businessLine !== "all") {
-      params.push(businessLine);
-      filters.push(`l.business_line = $${params.length}`);
+    const filters: string[] = ["s.status = 'drafted'"]
+    const params: unknown[] = []
+    if (businessLine && businessLine !== 'all') {
+      params.push(businessLine)
+      filters.push(`l.business_line = $${params.length}`)
+    }
+    if (category && category !== 'all') {
+      params.push(category)
+      filters.push(`l.category = $${params.length}`)
+    }
+    if (batchId) {
+      params.push(batchId)
+      filters.push(`l.batch_id = $${params.length}`)
     }
     if (search) {
-      params.push(`%${search}%`);
-      filters.push(`l.company_name ILIKE $${params.length}`);
+      params.push(`%${search}%`)
+      filters.push(`l.company_name ILIKE $${params.length}`)
     }
-    if (hasEmailParam === "true") {
-      filters.push(`NULLIF(TRIM(l.contact_email), '') IS NOT NULL`);
-    } else if (hasEmailParam === "false") {
-      filters.push(`NULLIF(TRIM(l.contact_email), '') IS NULL`);
+    if (hasEmailParam === 'true') {
+      filters.push(`NULLIF(TRIM(l.contact_email), '') IS NOT NULL`)
+    } else if (hasEmailParam === 'false') {
+      filters.push(`NULLIF(TRIM(l.contact_email), '') IS NULL`)
     }
-    const whereClause = filters.join(" AND ");
+    const whereClause = filters.join(' AND ')
 
     const totalRows = await query<{ count: string }>(
       `SELECT COUNT(*)::text AS count FROM sequences s JOIN leads l ON l.id = s.lead_id WHERE ${whereClause}`,
-      params
-    );
-    const total = Number(totalRows[0]?.count) || 0;
+      params,
+    )
+    const total = Number(totalRows[0]?.count) || 0
 
     const sequences = await query<SeqRow>(
       `SELECT s.id, s.lead_id, s.status, s.created_at,
-              l.company_name, l.location, l.cmmc_level_sought, l.score, l.contact_name, l.contact_email, l.business_line
+              l.company_name, l.location, l.cmmc_level_sought, l.score, l.contact_name, l.contact_email,
+              l.business_line, l.category, l.batch_id, l.fit_score, l.fit_reason, l.recommended_service, l.website
        FROM sequences s
        JOIN leads l ON l.id = s.lead_id
        WHERE ${whereClause}
        ORDER BY s.created_at ASC
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
-      [...params, limit, offset]
-    );
+      [...params, limit, offset],
+    )
 
-    const seqIds = sequences.map((s) => s.id);
-    const emailsBySeq = new Map<number, { touch_number: number; subject: string | null; body: string | null; flagged_reason: string | null }[]>();
-    const linkedinBySeq = new Map<number, string>();
+    const seqIds = sequences.map((s) => s.id)
+    const emailsBySeq = new Map<number, { touch_number: number; subject: string | null; body: string | null; flagged_reason: string | null }[]>()
+    const linkedinBySeq = new Map<number, string>()
 
     if (seqIds.length) {
       const emails = await query<EmailRow>(
         `SELECT sequence_id, touch_number, subject, body, flagged_reason FROM emails WHERE sequence_id = ANY($1) ORDER BY touch_number ASC`,
-        [seqIds]
-      );
+        [seqIds],
+      )
       for (const e of emails) {
-        if (!emailsBySeq.has(e.sequence_id)) emailsBySeq.set(e.sequence_id, []);
-        emailsBySeq.get(e.sequence_id)!.push({ touch_number: e.touch_number, subject: e.subject, body: e.body, flagged_reason: e.flagged_reason })
+        if (!emailsBySeq.has(e.sequence_id)) emailsBySeq.set(e.sequence_id, [])
+        emailsBySeq.get(e.sequence_id)!.push({
+          touch_number: e.touch_number,
+          subject: e.subject,
+          body: e.body,
+          flagged_reason: e.flagged_reason,
+        })
       }
 
       const linkedinRows = await query<LinkedinRow>(
         `SELECT sequence_id, message FROM linkedin_messages WHERE sequence_id = ANY($1)`,
-        [seqIds]
-      );
-      for (const l of linkedinRows) linkedinBySeq.set(l.sequence_id, l.message);
+        [seqIds],
+      )
+      for (const l of linkedinRows) linkedinBySeq.set(l.sequence_id, l.message)
     }
 
     const result = sequences.map((seq) => ({
@@ -102,15 +124,27 @@ export async function GET(req: NextRequest) {
       contact_name: seq.contact_name,
       contact_email: seq.contact_email,
       business_line: seq.business_line,
+      category: seq.category,
+      batch_id: seq.batch_id,
+      fit_score: seq.fit_score,
+      fit_reason: seq.fit_reason,
+      recommended_service: seq.recommended_service,
+      website: seq.website,
       created_at: seq.created_at,
       emails: emailsBySeq.get(seq.id) ?? [],
-      linkedin_message: linkedinBySeq.get(seq.id) ?? "",
+      linkedin_message: linkedinBySeq.get(seq.id) ?? '',
       has_flagged: (emailsBySeq.get(seq.id) ?? []).some((e) => !!e.flagged_reason),
-    }));
+    }))
 
-    return NextResponse.json({ pending: result, total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) });
+    return NextResponse.json({
+      pending: result,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    })
   } catch (err) {
-    console.error("[marketing/approval/pending]", err);
-    return NextResponse.json({ error: "Failed to load approval queue" }, { status: 500 });
+    console.error('[marketing/approval/pending]', err)
+    return NextResponse.json({ error: 'Failed to load approval queue' }, { status: 500 })
   }
 }
