@@ -6,6 +6,8 @@ import { draftLeadIds } from '@/lib/marketing/draft-leads'
 import type { DraftLeadResult } from '@/lib/marketing/draft-leads'
 import { isMarketingAutomationAuthorized } from '@/lib/marketing/service-auth'
 
+export const runtime = 'nodejs'
+
 type Query = <T extends Record<string, unknown> = Record<string, unknown>>(
   text: string,
   params?: unknown[],
@@ -27,11 +29,29 @@ const productionDependencies: ClayBatchDependencies = {
   onError: (error) => console.error('[marketing/clay-batch] intake failed', error),
 }
 
+function jsonResponse(
+  body: Record<string, unknown>,
+  status: number,
+): NextResponse {
+  return NextResponse.json(body, {
+    status,
+    headers: { 'Cache-Control': 'no-store' },
+  })
+}
+
 function errorResponse(error: string, status: number, retryable = false): NextResponse {
-  return NextResponse.json(
+  return jsonResponse(
     retryable ? { ok: false, error, retryable: true } : { ok: false, error },
-    { status },
+    status,
   )
+}
+
+function reportError(deps: ClayBatchDependencies, error: unknown): void {
+  try {
+    deps.onError?.(error)
+  } catch {
+    // Error reporting must not alter the stable automation response.
+  }
 }
 
 export async function handleClayBatchPost(
@@ -93,12 +113,15 @@ export async function handleClayBatchPost(
 
     const created = inserted.length > 0
     let leadId = inserted[0]?.id
+    let storedBatchId = lead.batch_id
     if (!leadId) {
-      const existing = await deps.query<{ id: number }>(
-        `SELECT id FROM leads WHERE source = 'clay' AND external_source_id = $1`,
+      const existing = await deps.query<{ id: number; batch_id: string | null }>(
+        `SELECT id, batch_id FROM leads WHERE source = 'clay' AND external_source_id = $1`,
         [lead.external_source_id],
       )
       leadId = existing[0]?.id
+      // First-write-wins: replays keep the original stored batch_id.
+      if (existing[0]?.batch_id) storedBatchId = existing[0].batch_id
     }
     if (!leadId) throw new Error('lead insert or replay lookup returned no row')
 
@@ -106,27 +129,43 @@ export async function handleClayBatchPost(
     const draftResult = draftResults.find((result) => result.leadId === leadId)
     const draftSucceeded = draftResult?.status === 'drafted'
       || (draftResult?.status === 'skipped' && draftResult.reason === 'already_drafted')
-    if (!draftSucceeded) return errorResponse('draft_failed', 500, true)
+    if (!draftSucceeded) {
+      reportError(deps, {
+        stage: 'draft',
+        lead_id: leadId,
+        external_source_id: lead.external_source_id,
+        draft_status: draftResult?.status ?? 'missing',
+        draft_reason: draftResult && 'reason' in draftResult ? draftResult.reason : null,
+      })
+      return errorResponse('draft_failed', 500, true)
+    }
 
     const sequences = await deps.query<{ id: number }>(
       `SELECT id FROM sequences WHERE lead_id = $1 ORDER BY id`,
       [leadId],
     )
-    if (!sequences.length) return errorResponse('draft_failed', 500, true)
+    if (!sequences.length) {
+      reportError(deps, {
+        stage: 'sequence_lookup',
+        lead_id: leadId,
+        external_source_id: lead.external_source_id,
+      })
+      return errorResponse('draft_failed', 500, true)
+    }
 
-    return NextResponse.json({
+    return jsonResponse({
       ok: true,
       created,
       lead_id: leadId,
-      batch_id: lead.batch_id,
+      batch_id: storedBatchId,
       sequence_ids: sequences.map((sequence) => sequence.id),
-    }, { status: created ? 201 : 200 })
+    }, created ? 201 : 200)
   } catch (error) {
-    try {
-      deps.onError?.(error)
-    } catch {
-      // Error reporting must not alter the stable automation response.
-    }
+    reportError(deps, {
+      stage: 'intake',
+      external_source_id: lead.external_source_id,
+      message: error instanceof Error ? error.message : 'unknown_error',
+    })
     return errorResponse('intake_failed', 500, true)
   }
 }
