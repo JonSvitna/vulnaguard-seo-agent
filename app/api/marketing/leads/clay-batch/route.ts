@@ -6,8 +6,6 @@ import { draftLeadIds } from '@/lib/marketing/draft-leads'
 import type { DraftLeadResult } from '@/lib/marketing/draft-leads'
 import { isMarketingAutomationAuthorized } from '@/lib/marketing/service-auth'
 
-export const runtime = 'nodejs'
-
 type Query = <T extends Record<string, unknown> = Record<string, unknown>>(
   text: string,
   params?: unknown[],
