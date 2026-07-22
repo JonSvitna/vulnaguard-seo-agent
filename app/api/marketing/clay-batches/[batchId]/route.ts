@@ -4,8 +4,6 @@ import { getClayBatchSummary, productionDependencies } from '@/lib/marketing/bat
 import { buildClaySlackMessage } from '@/lib/marketing/clay-slack'
 import { isMarketingAutomationAuthorized } from '@/lib/marketing/service-auth'
 
-export const runtime = 'nodejs'
-
 interface RouteContext {
   params: Promise<{ batchId: string }>
 }
