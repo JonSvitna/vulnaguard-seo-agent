@@ -1,6 +1,7 @@
 "use client";
 /* eslint-disable @typescript-eslint/no-explicit-any, react/no-unescaped-entities */
-import { useState, useEffect, useCallback } from "react";
+import { Suspense, useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { UsagePanel } from "./UsagePanel";
 
 // ─── Types ────────────────────────────────────────────────
@@ -52,6 +53,12 @@ interface PendingSequence {
   contact_name: string | null;
   contact_email: string | null;
   business_line: string;
+  category?: string | null;
+  batch_id?: string | null;
+  fit_score?: number | null;
+  fit_reason?: string | null;
+  recommended_service?: string | null;
+  website?: string | null;
   created_at: string;
   emails: PendingEmail[];
   linkedin_message: string;
@@ -188,7 +195,7 @@ function daysUntil(dateStr: string | null) {
 
 const TIERS = ["fast", "balanced", "powerful"];
 const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed", "no_email"];
-const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral"];
+const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral", "clay_leads"];
 type ContactFilter = "all" | "has_email" | "no_email";
 
 function leadHasEmail(email: string | null | undefined): boolean {
@@ -196,7 +203,11 @@ function leadHasEmail(email: string | null | undefined): boolean {
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
-  sales: "Sales", partnership: "Partnership", relationship_building: "Relationship Building", referral: "Referral",
+  sales: "Sales",
+  partnership: "Partnership",
+  relationship_building: "Relationship Building",
+  referral: "Referral",
+  clay_leads: "Clay Leads",
 };
 
 // ─── Small components ──────────────────────────────────────
@@ -233,6 +244,7 @@ function EmailTouch({ email, idx }: any) {
 function SequenceCard({ seq, selected, onToggle, onApprove, onReject }: any) {
   const [expanded, setExpanded] = useState(true);
   const hasEmail = !!seq.contact_email;
+  const isClay = seq.category === "clay_leads" || !!seq.batch_id || seq.fit_score != null;
 
   return (
     <div style={{
@@ -250,6 +262,8 @@ function SequenceCard({ seq, selected, onToggle, onApprove, onReject }: any) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: "#fff" }}>{seq.company_name}</span>
             {seq.cmmc_level_sought && <Badge label={seq.cmmc_level_sought} color="#4C8EC9" />}
+            {seq.recommended_service && <Badge label={seq.recommended_service} color="#7C6AC4" />}
+            {seq.fit_score != null && <Badge label={`Fit ${seq.fit_score}`} color="#4CC98E" />}
             <span style={{ fontSize: 11, color: "#555" }}>{seq.location}</span>
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
@@ -260,7 +274,21 @@ function SequenceCard({ seq, selected, onToggle, onApprove, onReject }: any) {
             {hasEmail
               ? <span style={{ fontSize: 11, color: "#4CC98E" }}>✓ {seq.contact_email}</span>
               : <span style={{ fontSize: 11, color: "#C94C4C" }}>⚠ No email — LinkedIn only</span>}
+            {seq.website && (
+              <a href={seq.website.startsWith("http") ? seq.website : `https://${seq.website}`} target="_blank" rel="noreferrer"
+                style={{ fontSize: 11, color: "#4C8EC9", textDecoration: "none" }}>
+                {seq.website.replace(/^https?:\/\//i, "").replace(/\/$/, "")}
+              </a>
+            )}
+            {seq.batch_id && (
+              <span style={{ fontSize: 11, color: "#888", fontFamily: "monospace" }}>batch {seq.batch_id}</span>
+            )}
           </div>
+          {isClay && seq.fit_reason && (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#999", lineHeight: 1.5, maxWidth: 640 }}>
+              {seq.fit_reason}
+            </div>
+          )}
         </div>
 
         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -862,9 +890,13 @@ function LeadHistoryModal({ leadId, companyName, onClose }: { leadId: number; co
 }
 
 // ─── Main Dashboard ───────────────────────────────────────
-export default function MarketingAgentDashboard() {
+function MarketingAgentDashboard() {
   type LeadColumnKey = "company" | "status" | "score" | "cmmc" | "location" | "email" | "persona" | "actions";
   type LeadSortKey = "company_name" | "status" | "score" | "cmmc_level_sought" | "location" | "contact_email" | "persona_slug";
+
+  const searchParams = useSearchParams();
+  const urlCategory = searchParams.get("category")?.trim() || "";
+  const urlBatchId = searchParams.get("batch_id")?.trim() || "";
 
   const [tab, setTab] = useState("approval");
   const [stats, setStats] = useState<Stats>(EMPTY_STATS);
@@ -873,6 +905,8 @@ export default function MarketingAgentDashboard() {
   const [pendingTotal, setPendingTotal] = useState(0);
   const [pendingTotalPages, setPendingTotalPages] = useState(1);
   const [pendingBusinessLine, setPendingBusinessLine] = useState("all");
+  const [pendingCategory, setPendingCategory] = useState(urlCategory || "all");
+  const [pendingBatchId, setPendingBatchId] = useState(urlBatchId);
   const [pendingContactFilter, setPendingContactFilter] = useState<ContactFilter>("all");
   const [pendingSearch, setPendingSearch] = useState("");
   const [usageRefreshKey, setUsageRefreshKey] = useState(0);
@@ -1110,6 +1144,8 @@ export default function MarketingAgentDashboard() {
   const fetchPending = useCallback(async () => {
     const params = new URLSearchParams({ page: String(pendingPage), limit: String(PENDING_PAGE_SIZE) });
     if (pendingBusinessLine !== "all") params.set("business_line", pendingBusinessLine);
+    if (pendingCategory !== "all") params.set("category", pendingCategory);
+    if (pendingBatchId.trim()) params.set("batch_id", pendingBatchId.trim());
     if (pendingContactFilter === "has_email") params.set("has_email", "true");
     if (pendingContactFilter === "no_email") params.set("has_email", "false");
     if (pendingSearch.trim()) params.set("search", pendingSearch.trim());
@@ -1120,7 +1156,7 @@ export default function MarketingAgentDashboard() {
       setPendingTotal(data.total ?? 0);
       setPendingTotalPages(data.totalPages ?? 1);
     }
-  }, [pendingPage, pendingBusinessLine, pendingContactFilter, pendingSearch]);
+  }, [pendingPage, pendingBusinessLine, pendingCategory, pendingBatchId, pendingContactFilter, pendingSearch]);
 
   const fetchQueue = useCallback(async () => {
     const res = await fetch("/api/marketing/send-queue");
@@ -1261,6 +1297,42 @@ export default function MarketingAgentDashboard() {
       showToast(`${data.approved ?? 0} approved — ${data.sent ?? 0} sent`);
     } else {
       showToast(data.error ?? "Failed to approve all", "#C94C4C");
+    }
+    await refreshAll();
+  };
+
+  const approveBatch = async () => {
+    const batch_id = pendingBatchId.trim();
+    if (!batch_id) return;
+    if (!confirm(`Approve and send all drafted sequences in batch ${batch_id}?`)) return;
+    setSelected(new Set());
+    const res = await fetch("/api/marketing/approval/approve", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batch_id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`${data.approved ?? 0} approved — ${data.sent ?? 0} sent`);
+    } else {
+      showToast(data.error ?? "Failed to approve batch", "#C94C4C");
+    }
+    await refreshAll();
+  };
+
+  const rejectBatch = async () => {
+    const batch_id = pendingBatchId.trim();
+    if (!batch_id) return;
+    if (!confirm(`Reject all drafted sequences in batch ${batch_id}?`)) return;
+    setSelected(new Set());
+    const res = await fetch("/api/marketing/approval/reject", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batch_id }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      showToast(`${data.rejected ?? data.updated ?? 0} rejected`, "#C94C4C");
+    } else {
+      showToast(data.error ?? "Failed to reject batch", "#C94C4C");
     }
     await refreshAll();
   };
@@ -1650,7 +1722,7 @@ export default function MarketingAgentDashboard() {
                 </p>
               </div>
               {pending.length > 0 && (
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button onClick={selectAll} style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, padding: "6px 12px", color: "#888", fontSize: 12, cursor: "pointer" }}>
                     {selected.size === pending.length ? "Deselect all" : "Select all"}
                   </button>
@@ -1659,19 +1731,47 @@ export default function MarketingAgentDashboard() {
                       Approve {selected.size} selected
                     </button>
                   )}
+                  {pendingBatchId.trim() && (
+                    <>
+                      <button onClick={approveBatch} style={{ background: "linear-gradient(135deg, #4CC98E, #2E8B57)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        Approve batch
+                      </button>
+                      <button onClick={rejectBatch} style={{ background: "rgba(201,76,76,0.15)", border: "1px solid rgba(201,76,76,0.4)", borderRadius: 6, padding: "6px 14px", color: "#C94C4C", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        Reject batch
+                      </button>
+                    </>
+                  )}
                   <button onClick={approveAllDrafted} style={{ background: "linear-gradient(135deg, #4CC98E, #2E8B57)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                     Approve &amp; send all drafted
+                  </button>
+                </div>
+              )}
+              {pending.length === 0 && pendingBatchId.trim() && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={approveBatch} style={{ background: "linear-gradient(135deg, #4CC98E, #2E8B57)", border: "none", borderRadius: 6, padding: "6px 14px", color: "#0D0F14", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    Approve batch
+                  </button>
+                  <button onClick={rejectBatch} style={{ background: "rgba(201,76,76,0.15)", border: "1px solid rgba(201,76,76,0.4)", borderRadius: 6, padding: "6px 14px", color: "#C94C4C", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                    Reject batch
                   </button>
                 </div>
               )}
             </div>
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                 {["all", ...BUSINESS_LINE_OPTIONS].map(b => (
                   <button key={b} onClick={() => { setPendingBusinessLine(b); setPendingPage(1); }}
                     style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${pendingBusinessLine === b ? "rgba(76,201,142,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: pendingBusinessLine === b ? "rgba(76,201,142,0.1)" : "transparent", color: pendingBusinessLine === b ? "#4CC98E" : "#666", cursor: "pointer" }}>
                     {b === "all" ? "all lines" : BUSINESS_LINE_LABELS[b]}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {["all", ...CATEGORY_OPTIONS].map(c => (
+                  <button key={c} onClick={() => { setPendingCategory(c); setPendingPage(1); }}
+                    style={{ padding: "4px 10px", fontSize: 11, border: `1px solid ${pendingCategory === c ? "rgba(124,106,196,0.5)" : "rgba(255,255,255,0.1)"}`, borderRadius: 5, background: pendingCategory === c ? "rgba(124,106,196,0.12)" : "transparent", color: pendingCategory === c ? "#A89BE0" : "#666", cursor: "pointer" }}>
+                    {c === "all" ? "all categories" : CATEGORY_LABELS[c]}
                   </button>
                 ))}
               </div>
@@ -1683,6 +1783,12 @@ export default function MarketingAgentDashboard() {
                   </button>
                 ))}
               </div>
+              <input
+                value={pendingBatchId}
+                onChange={e => { setPendingBatchId(e.target.value); setPendingPage(1); }}
+                placeholder="Filter by batch_id..."
+                style={{ ...fieldStyle, maxWidth: 220 }}
+              />
               <input
                 value={pendingSearch}
                 onChange={e => { setPendingSearch(e.target.value); setPendingPage(1); }}
@@ -2628,5 +2734,13 @@ export default function MarketingAgentDashboard() {
         select option { background: #1a1d24; }
       `}</style>
     </div>
+  );
+}
+
+export default function MarketingAgentsPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 40, color: "#666", fontSize: 13 }}>Loading...</div>}>
+      <MarketingAgentDashboard />
+    </Suspense>
   );
 }
