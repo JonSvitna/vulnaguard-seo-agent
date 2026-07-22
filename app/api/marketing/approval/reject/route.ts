@@ -1,32 +1,43 @@
-import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { NextRequest, NextResponse } from 'next/server'
+
+import { rejectClayBatch, rejectSequenceIds } from '@/lib/marketing/batch-approval'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const ids: number[] = Array.isArray(body.sequence_ids) ? body.sequence_ids : [];
+    const body = await req.json().catch(() => ({}))
+    const hasSequenceIds = Array.isArray(body.sequence_ids)
+    const hasBatchId = typeof body.batch_id === 'string' && body.batch_id.trim().length > 0
 
-    if (!ids.length) {
-      return NextResponse.json({ error: "sequence_ids is required" }, { status: 400 });
+    if (hasSequenceIds && hasBatchId) {
+      return NextResponse.json(
+        { error: 'Provide sequence_ids or batch_id, not both' },
+        { status: 400 },
+      )
     }
 
-    const sequences = await query<{ lead_id: number }>(
-      `UPDATE sequences SET status = 'rejected'
-       WHERE id = ANY($1::int[]) RETURNING lead_id`,
-      [ids]
-    );
-
-    const leadIds = sequences.map((s) => s.lead_id);
-    if (leadIds.length) {
-      await query(
-        `UPDATE leads SET status = 'rejected', updated_at = NOW() WHERE id = ANY($1::int[])`,
-        [leadIds]
-      );
+    if (!hasSequenceIds && !hasBatchId) {
+      return NextResponse.json(
+        { error: 'sequence_ids or batch_id is required' },
+        { status: 400 },
+      )
     }
 
-    return NextResponse.json({ ok: true, updated: ids.length });
+    let result
+    if (hasBatchId) {
+      result = await rejectClayBatch(body.batch_id.trim())
+    } else {
+      const ids: number[] = body.sequence_ids
+        .map((id: unknown) => Number(id))
+        .filter((id: number) => Number.isInteger(id) && id > 0)
+      if (!ids.length) {
+        return NextResponse.json({ error: 'sequence_ids is required' }, { status: 400 })
+      }
+      result = await rejectSequenceIds(ids)
+    }
+
+    return NextResponse.json(result)
   } catch (err) {
-    console.error("[marketing/approval/reject]", err);
-    return NextResponse.json({ error: "Failed to reject sequences" }, { status: 500 });
+    console.error('[marketing/approval/reject]', err)
+    return NextResponse.json({ error: 'Failed to reject sequences' }, { status: 500 })
   }
 }
