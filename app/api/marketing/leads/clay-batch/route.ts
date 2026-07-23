@@ -114,8 +114,8 @@ export async function handleClayBatchPost(
     let storedBatchId = lead.batch_id
     if (!leadId) {
       const existing = await deps.query<{ id: number; batch_id: string | null }>(
-        `SELECT id, batch_id FROM leads WHERE source = 'clay' AND external_source_id = $1`,
-        [lead.external_source_id],
+        `SELECT id, batch_id FROM leads WHERE source = $1 AND external_source_id = $2`,
+        [lead.source, lead.external_source_id],
       )
       leadId = existing[0]?.id
       // First-write-wins: replays keep the original stored batch_id.

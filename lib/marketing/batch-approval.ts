@@ -69,8 +69,8 @@ function truncatePreview(body: string | null | undefined): string {
   return `${text.slice(0, PREVIEW_MAX - 1).trimEnd()}…`
 }
 
-function dashboardPath(batchId: string): string {
-  return `/dashboard/marketing-agents?category=clay_leads&batch_id=${encodeURIComponent(batchId)}`
+function dashboardPath(batchId: string, category: string): string {
+  return `/dashboard/marketing-agents?category=${encodeURIComponent(category)}&batch_id=${encodeURIComponent(batchId)}`
 }
 
 export async function getClayBatchSummary(
@@ -81,11 +81,13 @@ export async function getClayBatchSummary(
     lead_count: string
     draft_count: string
     average_fit_score: string | null
+    category: string | null
   }>(
     `SELECT
        COUNT(DISTINCT l.id)::text AS lead_count,
        COUNT(DISTINCT s.id) FILTER (WHERE s.status = 'drafted')::text AS draft_count,
-       AVG(l.fit_score)::text AS average_fit_score
+       AVG(l.fit_score)::text AS average_fit_score,
+       MAX(l.category) AS category
      FROM leads l
      LEFT JOIN sequences s ON s.lead_id = l.id
      WHERE l.batch_id = $1`,
@@ -135,7 +137,7 @@ export async function getClayBatchSummary(
       subject: row.subject,
       preview: truncatePreview(row.body),
     })),
-    dashboard_path: dashboardPath(batchId),
+    dashboard_path: dashboardPath(batchId, totals[0]?.category ?? 'clay_leads'),
   }
 }
 
@@ -216,7 +218,7 @@ export async function approveClayBatch(
   batchId: string,
   deps: BatchApprovalDependencies = productionDependencies,
 ): Promise<ApproveBatchResult> {
-  // Resolve by batch_id (Clay batches also set category=clay_leads).
+  // Resolve by batch_id (each source sets its own category, e.g. clay_leads/origami_leads).
   const drafted = await deps.query<{ id: number }>(
     `SELECT s.id
      FROM sequences s

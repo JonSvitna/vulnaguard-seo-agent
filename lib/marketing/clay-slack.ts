@@ -43,8 +43,15 @@ function actionValue(batchId: string, action: ClaySlackActionValue['action']): s
   return JSON.stringify(value)
 }
 
+function sourceLabel(batchId: string): string {
+  const prefix = batchId.split('-')[0] ?? ''
+  if (!prefix) return 'Lead'
+  return prefix.charAt(0).toUpperCase() + prefix.slice(1)
+}
+
 /**
- * Pure Slack Block Kit contract for a Clay batch review message.
+ * Pure Slack Block Kit contract for a lead batch review message. Vendor-agnostic —
+ * the label is derived from the batch_id prefix (e.g. clay-... / origami-...).
  * JSON-safe, side-effect free. Uses short sample previews only — never full email bodies.
  */
 export function buildClaySlackMessage(summary: ClayBatchSummary): ClaySlackMessage {
@@ -58,8 +65,10 @@ export function buildClaySlackMessage(summary: ClayBatchSummary): ClaySlackMessa
     dashboard_path: dashboardPath,
   } = summary
 
+  const label = sourceLabel(batchId)
+
   const text =
-    `Clay batch ${batchId}: ${draftCount} drafts ready for review ` +
+    `${label} batch ${batchId}: ${draftCount} drafts ready for review ` +
     `(avg fit ${averageFitScore}, ${leadCount} leads).`
 
   const blocks: Record<string, unknown>[] = [
@@ -67,7 +76,7 @@ export function buildClaySlackMessage(summary: ClayBatchSummary): ClaySlackMessa
       type: 'header',
       text: {
         type: 'plain_text',
-        text: `Clay leads ready — ${batchId}`,
+        text: `${label} leads ready — ${batchId}`,
         emoji: true,
       },
     },

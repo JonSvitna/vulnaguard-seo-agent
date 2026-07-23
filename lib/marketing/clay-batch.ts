@@ -9,6 +9,14 @@ export const CLAY_SERVICE_TO_BUSINESS_LINE = {
 
 type ClayService = keyof typeof CLAY_SERVICE_TO_BUSINESS_LINE;
 
+const LEAD_SOURCES = ['clay', 'origami'] as const;
+type LeadSource = (typeof LEAD_SOURCES)[number];
+
+const SOURCE_DETAIL: Record<LeadSource, string> = {
+  clay: 'scheduled_clay_table',
+  origami: 'scheduled_origami_run',
+};
+
 export interface NormalizedClayLead {
   external_source_id: string;
   batch_id: string;
@@ -18,12 +26,12 @@ export interface NormalizedClayLead {
   contact_title?: string;
   contact_email: string;
   location?: string;
-  source: 'clay';
-  source_detail: 'scheduled_clay_table';
+  source: LeadSource;
+  source_detail: string;
   fit_score: number;
   fit_reason: string;
   recommended_service: ClayService;
-  category: 'clay_leads';
+  category: string;
   business_line: (typeof CLAY_SERVICE_TO_BUSINESS_LINE)[ClayService];
 }
 
@@ -102,18 +110,24 @@ export function normalizeClayLead(input: unknown): NormalizedClayLead {
   }
   const recommendedService = service as ClayService;
 
+  const rawSource = row.source;
+  if (rawSource !== undefined && (typeof rawSource !== 'string' || !LEAD_SOURCES.includes(rawSource as LeadSource))) {
+    throw new TypeError('source is not supported');
+  }
+  const source: LeadSource = (rawSource as LeadSource | undefined) ?? 'clay';
+
   const normalized: NormalizedClayLead = {
     external_source_id: requiredString(row, 'clay_row_id'),
     batch_id: requiredString(row, 'batch_id'),
     company_name: requiredString(row, 'company_name'),
     website: normalizeDomain(requiredString(row, 'website')),
     contact_email: normalizeEmail(requiredString(row, 'email')),
-    source: 'clay',
-    source_detail: 'scheduled_clay_table',
+    source,
+    source_detail: SOURCE_DETAIL[source],
     fit_score: fitScore as number,
     fit_reason: requiredString(row, 'fit_reason'),
     recommended_service: recommendedService,
-    category: 'clay_leads',
+    category: `${source}_leads`,
     business_line: CLAY_SERVICE_TO_BUSINESS_LINE[recommendedService],
   };
 
