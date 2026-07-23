@@ -18,7 +18,7 @@ Configured two ways:
 | `OPENAI_API_KEY` | Yes* | Alternative provider |
 | `RESEND_API_KEY` | Yes | Live outreach sends |
 | `DATABASE_URL` | Yes (Railway) | Leads / sequences / emails |
-| `MARKETING_AUTOMATION_SECRET` | Yes (for Clay/n8n) | Bearer auth for `/api/marketing/leads/clay-batch` and `/api/marketing/clay-batches/:id` |
+| `MARKETING_AUTOMATION_SECRET` | Yes (for Clay/n8n) | Bearer auth for Clay automation routes: intake, batch summary, batch approve, batch reject |
 | `SEND_BATCH_INTERVAL_MINUTES` | No | Drip scheduler cadence (default 15) |
 | `DISABLE_SEND_BATCH_SCHEDULER` | No | Set `true` to disable background send/drip/STOP checks |
 | `PGSSLMODE` | No | `disable` only for local non-SSL Postgres |
@@ -37,18 +37,26 @@ Without these, STOP checks no-op and opt-outs stay manual.
 
 ## Approve = send
 
-`POST /api/marketing/approval/approve` schedules touch 1 immediately, schedules follow-ups from `sequence_delay_days`, and calls `runSendBatch()` right away. There is no separate Release step.
+`POST /api/marketing/approval/approve` (dashboard) schedules touch 1 immediately, schedules follow-ups from `sequence_delay_days`, and calls `runSendBatch()` right away. There is no separate Release step.
 
-Batch approve from Clay/Slack uses the same path with `{"batch_id":"clay-YYYY-MM-DD"}`.
+Clay/Slack automation uses Bearer-protected batch routes (same underlying helpers):
+
+- `POST /api/marketing/clay-batches/:batchId/approve`
+- `POST /api/marketing/clay-batches/:batchId/reject`
 
 ---
 
 ## Clay intake
 
-Live automation path:
+Live automation path (all require `Authorization: Bearer $MARKETING_AUTOMATION_SECRET`):
 
-`POST /api/marketing/leads/clay-batch` with `Authorization: Bearer $MARKETING_AUTOMATION_SECRET`
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/marketing/leads/clay-batch` | Insert + draft one qualified Clay row |
+| `GET` | `/api/marketing/clay-batches/:batchId` | Summary + Slack Block Kit contract |
+| `POST` | `/api/marketing/clay-batches/:batchId/approve` | Approve batch and send |
+| `POST` | `/api/marketing/clay-batches/:batchId/reject` | Reject drafted sequences in batch |
 
-Clay fit scoring happens upstream. This route inserts + drafts; it does **not** run the CMMC qualifier.
+Clay fit scoring happens upstream. Intake inserts + drafts; it does **not** run the CMMC qualifier.
 
 See AIS-OS `references/clay-lead-automation.md` for the full Clay → n8n → approve flow.
