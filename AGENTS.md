@@ -4,7 +4,7 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# Vulnaguard SEO Agent — Codebase Guide
+# Vulnaguard Outreach — Codebase Guide
 
 ## Mandatory Workflow Rules
 
@@ -20,7 +20,7 @@ npm run build    # Production build
 npm run lint     # ESLint
 ```
 
-No test suite configured. Validate via TypeScript (`tsc --noEmit`) and lint.
+Test suite: plain Node.js `node:test` (`npm run test`), colocated `.test.mjs` files. Also validate via TypeScript (`tsc --noEmit`) and lint.
 
 ## Tech Stack
 
@@ -29,9 +29,9 @@ No test suite configured. Validate via TypeScript (`tsc --noEmit`) and lint.
 | Framework | Next.js 16.2.9 (App Router), React 19 |
 | Language | TypeScript 5 |
 | Styling | Tailwind CSS v4 (PostCSS plugin — NOT `tailwind.config.js`) |
-| Database | PostgreSQL via `pg` — pool in `lib/db.ts`, schema auto-inits on first request |
-| AI | Anthropic Claude Sonnet 4.6 (`@anthropic-ai/sdk`) — all agents use this model |
-| GitHub | Octokit (`@octokit/rest`) — writes files to external site repos |
+| Database | PostgreSQL via `pg` — pool in `lib/db.ts`, versioned SQL migrations in `lib/db/migrations/` run via `lib/db/migrate.ts` |
+| AI | Anthropic Claude (`@anthropic-ai/sdk`) — lead qualifier + email copywriter |
+| Email | Resend (`lib/email.ts`), Microsoft Graph mailbox polling for reply/STOP detection (`lib/ms365-graph.ts`) |
 | Deploy | Railway (see `railway.json`, `nixpacks.toml`) |
 
 ## Environment Variables
@@ -41,7 +41,7 @@ No test suite configured. Validate via TypeScript (`tsc --noEmit`) and lint.
 | `DATABASE_URL` | PostgreSQL connection string (required — Railway plugin) |
 | `ANTHROPIC_API_KEY` | Claude API key (primary AI provider) |
 | `OPENAI_API_KEY` | GPT-4o fallback (optional) |
-| `GITHUB_TOKEN` | Writes pages to managed site repos |
+| `RESEND_API_KEY` | Sends outreach email |
 | `PGSSLMODE` | Set to `disable` for local/Railway internal connections |
 
 ## Directory Map
@@ -49,23 +49,22 @@ No test suite configured. Validate via TypeScript (`tsc --noEmit`) and lint.
 ```
 app/
   (app)/              # Authenticated app shell (Sidebar layout)
-    dashboard/        # SEO Agent chat UI (M1–M6 modules)
-    dashboard/marketing-agents/  # Lead pipeline UI
-    content-pipeline/ # Multi-platform content generator
+    dashboard/marketing-agents/  # Lead pipeline UI (leads, drafts, approval)
+    dashboard/activity/          # Pipeline run history
     settings/
   api/
-    agent/            # Main streaming SEO chat endpoint
-    agents/[name]/run # Generic agent runner (POST body → agent output)
-    sessions/         # CRUD for SEO session history
-    github/           # File write proxy to external repos
-    marketing/        # Leads, sequences, approvals, send queue
-    content-pipeline/ # Content generation + script endpoints
-    gsc/              # Google Search Console proxy
-    pexels/           # Stock image search
+    agents/[name]/run   # Generic agent runner (POST body → agent output)
+    marketing/          # Leads, sequences, approvals, send queue
+    health/db/          # DB connectivity check (used by Settings)
+    settings/ai-provider/
 lib/
-  config.ts           # SITES array + SEO_SYSTEM_PROMPT (the SEO agent brain)
-  db.ts               # PostgreSQL pool + schema (all tables defined here)
-  github.ts           # Octokit helpers (read/write/batch commit)
+  db.ts               # PostgreSQL pool + ensureSchema() (runs migrations)
+  db/
+    migrations/       # Numbered .sql files — additive, IF NOT EXISTS only
+    migrate.ts        # runMigrations() — applies unapplied files in schema_migrations order
+  domain/status.ts    # Shared lead/draft/email/job status enums
+  send-batch.ts       # Core sending worker (atomic claim + Resend send)
+  marketing/          # batch-approval.ts, draft-leads.ts — transactional, tested
   agents/
     registry.ts       # AGENT_REGISTRY — add new agents here
     runAgent.ts       # Runs agent + logs to agent_runs table
@@ -73,25 +72,15 @@ vulnaguard-marketing-agents/
   agents/
     scout/            # Lead extractor from raw text
     outreach/         # Lead qualifier + email copywriter
-    content-pipeline/ # Multi-brand social content generator
-  pipeline/           # DB persistence layer for content pipeline
-components/
-  content-pipeline/   # CaptureScreen, GeneratingScreen, Dashboard UI
 ```
 
 ## Key Conventions
 
 **API routes** use `NextRequest`/`NextResponse`. Dynamic params are `Promise<{ param: string }>` — always `await params`.
 
-**Database** — use the `query<T>()` helper from `lib/db.ts`. Schema lives entirely in `lib/db.ts` (`SCHEMA` const). New tables go there.
+**Database** — use the `query<T>()` helper from `lib/db.ts`. Schema changes go in a new numbered file under `lib/db/migrations/`, never edited into old ones — pure additive `IF NOT EXISTS` DDL, no drops/renames of live data without an explicit migration for it.
 
 **Agent system** — add new agents to `AGENT_REGISTRY` in `lib/agents/registry.ts`. All agents log runs to `agent_runs` table automatically via `runAgent.ts`.
-
-**Sites** — multi-tenant. All API calls accept `siteId`. Managed sites: `vulnaguard`, `sentinel-cmmc`, `mectofitness`, `bluealamo`. Config in `lib/config.ts`.
-
-**SEO modules** — M1 Research → M2 Monitor → M3 Audit → M4 Execute → M5 Page Factory → M6 Images. Phase markers (`<!-- PHASE:xxx:READY -->`) drive UI auto-advancement.
-
-**GitHub file writes** — always output complete files, never diffs. Blog posts → `app/blog/[slug]/page.tsx`, service pages → `app/[slug]/page.tsx` in target repos.
 
 **Tailwind v4** — uses `@import "tailwindcss"` in CSS, not `@tailwind base/components/utilities`. No `tailwind.config.js` — config is in `postcss.config.mjs`.
 

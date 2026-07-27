@@ -1,5 +1,13 @@
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return
+
+  const { runMigrations } = await import('@/lib/db/migrate')
+  const { getPool } = await import('@/lib/db')
+  const { applied } = await runMigrations(getPool())
+  if (applied.length > 0) {
+    console.log('[db] applied migrations:', applied.join(', '))
+  }
+
   if (process.env.DISABLE_SEND_BATCH_SCHEDULER === 'true') return
 
   const intervalMinutes = Number(process.env.SEND_BATCH_INTERVAL_MINUTES) || 15

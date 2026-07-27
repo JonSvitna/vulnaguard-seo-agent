@@ -23,7 +23,7 @@ export function Sidebar() {
         </div>
         <div>
           <div className="text-sm font-bold tracking-wide text-white">VULNAGUARD</div>
-          <div className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">Lead Outreach</div>
+          <div className="text-[10px] text-[#C9A84C] tracking-[0.15em] uppercase">Outreach</div>
         </div>
       </div>
 

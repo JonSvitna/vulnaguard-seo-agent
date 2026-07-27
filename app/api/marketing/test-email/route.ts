@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
 
     const result = await sendEmail({
       to: to.trim(),
-      subject: 'Resend test — Vulnaguard SEO Agent',
-      body: 'This is a test email confirming Resend is configured correctly for your Vulnaguard SEO Agent outreach pipeline.\n\nIf you received this, email sending is working.',
+      subject: 'Resend test — Vulnaguard Outreach',
+      body: 'This is a test email confirming Resend is configured correctly for your Vulnaguard Outreach pipeline.\n\nIf you received this, email sending is working.',
     })
 
     if (!result.ok) {
