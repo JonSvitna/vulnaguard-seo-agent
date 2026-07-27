@@ -74,7 +74,7 @@ Examples:
 
 **Phrases to use:** "I get it." / "That makes sense." / "That's not on you." / "Here's what I'd focus on first." / "No pressure." / "The simpler way to look at it is..." / "We've been through that ourselves."
 
-**Themes:** Compliance made simple, proactive protection, SMB-focused, real consequences of inaction, Vulnaguard Sentinel as the tool that removes friction.$body$)
+**Themes:** Compliance made simple, proactive protection, SMB-focused, real consequences of inaction, Vulnaguard Sentinel as the tool that removes friction.$body$, 'voice')
 ON CONFLICT (slug) DO NOTHING;
 
 INSERT INTO personas (slug, name, body, skill_type) VALUES
@@ -104,5 +104,5 @@ INSERT INTO personas (slug, name, body, skill_type) VALUES
 
 **What sounds like Sean:** "If it takes 14 clicks, something is broken." / "Most companies don't need more AI. They need fewer headaches." / "You're not selling software. You're selling less frustration, better visibility, more time, fewer clicks, and simpler processes."
 
-**What doesn't:** "Leveraging AI-powered transformational synergies to optimize operational efficiency." / "Our cutting-edge platform delivers robust, scalable solutions for the modern enterprise."$body$)
+**What doesn't:** "Leveraging AI-powered transformational synergies to optimize operational efficiency." / "Our cutting-edge platform delivers robust, scalable solutions for the modern enterprise."$body$, 'voice')
 ON CONFLICT (slug) DO NOTHING;
