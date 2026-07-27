@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { query, ensureSchema } from "@/lib/db";
 import { qualifyAndUpdateLead } from "@/lib/marketing/qualify";
 import { rejectAlreadyContactedLeads } from "@/lib/marketing/external-dedup";
+import { isValidEmailFormat } from "@/lib/marketing/validate-email";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 
 type LeadField =
@@ -70,12 +71,25 @@ export async function POST(req: NextRequest) {
     // no point qualifying a lead we've already emailed from the other app.
     const externallyRejected = await rejectAlreadyContactedLeads(inserted);
 
+    // Validate: a present-but-badly-formatted email can never be sent to, so park
+    // it in 'invalid_email' before it ever enters the qualify/draft pipeline —
+    // syntax/format check only, no MX lookup or paid verification API.
+    const invalidEmailIds = new Set<number>();
+    for (const lead of inserted) {
+      if (externallyRejected.has(lead.id)) continue;
+      if (lead.contact_email?.trim() && !isValidEmailFormat(lead.contact_email)) {
+        await query(`UPDATE leads SET status = 'invalid_email', updated_at = NOW() WHERE id = $1`, [lead.id]);
+        invalidEmailIds.add(lead.id);
+      }
+    }
+
     // The qualifier's scoring rubrics are CMMC/Sentinel-specific — only auto-run it
     // for that business line. Other lines (e.g. website_dev) stay 'discovered' until
     // a dedicated rubric exists, rather than being scored against the wrong criteria.
     const qualified = await Promise.all(
       inserted.map(async (lead) => {
         if (externallyRejected.has(lead.id)) return { ...lead, status: "rejected" };
+        if (invalidEmailIds.has(lead.id)) return { ...lead, status: "invalid_email" };
         if ((lead.business_line ?? "cmmc") !== "cmmc") return lead;
         try { return await qualifyAndUpdateLead(lead); }
         catch (err) {
@@ -88,6 +102,7 @@ export async function POST(req: NextRequest) {
     const qualifiedCount = qualified.filter((l) => l.status === "qualified").length;
     const disqualifiedCount = qualified.filter((l) => l.status === "disqualified").length;
     const alreadyContactedCount = externallyRejected.size;
+    const invalidEmailCount = invalidEmailIds.size;
 
     await query(
       `INSERT INTO pipeline_runs (agent, status, leads_processed, details, finished_at)
@@ -97,6 +112,7 @@ export async function POST(req: NextRequest) {
         imported: inserted.length,
         skipped_duplicates: skipped,
         already_contacted: alreadyContactedCount,
+        invalid_email: invalidEmailCount,
         qualified: qualifiedCount,
         disqualified: disqualifiedCount,
         persona_slug: persona_slug ?? null,
@@ -108,6 +124,7 @@ export async function POST(req: NextRequest) {
       imported: inserted.length,
       skipped_duplicates: skipped,
       already_contacted: alreadyContactedCount,
+      invalid_email: invalidEmailCount,
       qualified: qualifiedCount,
       disqualified: disqualifiedCount,
       leads: qualified,

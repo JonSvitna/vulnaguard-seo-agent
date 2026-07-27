@@ -90,6 +90,45 @@ function skippedResult(lead: OutreachLead): DraftLeadResult | null {
   return null
 }
 
+// Persists a generated draft (sequence + emails + optional LinkedIn message) and
+// advances the lead to 'drafted'. Shared by draftLeadIds (draft-only path, lead
+// still 'discovered') and the qualify-then-draft routes (lead already 'qualified'
+// by the time it drafts) — hence the two eligible source statuses below.
+export async function persistDraftedSequence(
+  leadId: number,
+  draft: CopywriterResult,
+  transactionQuery: Query,
+): Promise<void> {
+  await transactionQuery(`DELETE FROM sequences WHERE lead_id = $1`, [leadId])
+  const sequences = await transactionQuery<{ id: number }>(
+    `INSERT INTO sequences (lead_id, status) VALUES ($1, 'drafted') RETURNING id`,
+    [leadId],
+  )
+  const sequenceId = sequences[0].id
+
+  for (const email of draft.emails) {
+    await transactionQuery(
+      `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
+       VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
+      [sequenceId, leadId, email.touch_number, email.subject, email.body, email.flagged_reason ?? null],
+    )
+  }
+
+  if (draft.linkedin_message?.trim()) {
+    await transactionQuery(
+      `INSERT INTO linkedin_messages (sequence_id, lead_id, message, status)
+       VALUES ($1, $2, $3, 'drafted')`,
+      [sequenceId, leadId, draft.linkedin_message],
+    )
+  }
+
+  await transactionQuery(
+    `UPDATE leads SET status = 'drafted', updated_at = NOW()
+     WHERE id = $1 AND status IN ('discovered', 'qualified')`,
+    [leadId],
+  )
+}
+
 export async function draftLeadIds(
   leadIds: number[],
   deps: DraftLeadDependencies = productionDependencies,
@@ -149,34 +188,7 @@ export async function draftLeadIds(
           return { leadId, status: 'skipped', reason: 'lead_changed_retry' } as DraftLeadResult
         }
 
-        await transactionQuery(`DELETE FROM sequences WHERE lead_id = $1`, [leadId])
-        const sequences = await transactionQuery<{ id: number }>(
-          `INSERT INTO sequences (lead_id, status) VALUES ($1, 'drafted') RETURNING id`,
-          [leadId],
-        )
-        const sequenceId = sequences[0].id
-
-        for (const email of draft.emails) {
-          await transactionQuery(
-            `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
-             VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
-            [sequenceId, leadId, email.touch_number, email.subject, email.body, email.flagged_reason ?? null],
-          )
-        }
-
-        if (draft.linkedin_message?.trim()) {
-          await transactionQuery(
-            `INSERT INTO linkedin_messages (sequence_id, lead_id, message, status)
-             VALUES ($1, $2, $3, 'drafted')`,
-            [sequenceId, leadId, draft.linkedin_message],
-          )
-        }
-
-        await transactionQuery(
-          `UPDATE leads SET status = 'drafted', updated_at = NOW()
-           WHERE id = $1 AND status = 'discovered'`,
-          [leadId],
-        )
+        await persistDraftedSequence(leadId, draft, transactionQuery)
         return { leadId, status: 'drafted' } as DraftLeadResult
       })
       results.push(result)

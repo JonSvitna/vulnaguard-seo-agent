@@ -1,3 +1,5 @@
+import { isValidDomain, isValidEmailFormat } from './validate-email';
+
 export const CLAY_FIT_THRESHOLD = 70;
 
 export const CLAY_SERVICE_TO_BUSINESS_LINE = {
@@ -52,28 +54,9 @@ function optionalString(input: Record<string, unknown>, key: string): string | u
   return value.trim();
 }
 
-function isValidDomain(value: string): boolean {
-  if (value.length > 253 || value.endsWith('.') || value.includes('..')) return false;
-  const labels = value.split('.');
-  if (labels.length < 2 || labels.every((label) => /^\d+$/.test(label))) return false;
-  return labels.every(
-    (label) => label.length > 0 && label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label),
-  );
-}
-
 function normalizeEmail(value: string): string {
-  const email = value.toLowerCase();
-  const atIndex = email.lastIndexOf('@');
-  const localPart = email.slice(0, atIndex);
-  const domain = email.slice(atIndex + 1);
-  const dotAtom = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/i;
-  if (
-    atIndex <= 0 ||
-    localPart.length > 64 ||
-    email.length > 254 ||
-    !dotAtom.test(localPart) ||
-    !isValidDomain(domain)
-  ) {
+  const email = value.trim().toLowerCase();
+  if (!isValidEmailFormat(email)) {
     throw new TypeError('email must be a valid email address');
   }
   return email;

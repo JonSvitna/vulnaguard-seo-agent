@@ -3,6 +3,7 @@ import { query } from "@/lib/db";
 import { draftSequence } from "@/vulnaguard-marketing-agents/agents/outreach";
 import type { OutreachLead } from "@/vulnaguard-marketing-agents/agents/outreach/types";
 import { qualifyAndUpdateLead } from "@/lib/marketing/qualify";
+import { persistDraftedSequence } from "@/lib/marketing/draft-leads";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -78,31 +79,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // Auto-persist draft immediately — lead advances to 'drafted' regardless of whether
     // the user clicks Save in the modal. Prevents silent loss on modal close.
-    await query(`DELETE FROM sequences WHERE lead_id = $1`, [id]);
-    const seqs = await query<{ id: number }>(
-      `INSERT INTO sequences (lead_id, status) VALUES ($1, 'drafted') RETURNING id`,
-      [id]
-    );
-    const seqId = seqs[0].id;
-
-    for (const e of draft.emails) {
-      await query(
-        `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
-         VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
-        [seqId, id, e.touch_number, e.subject, e.body, e.flagged_reason ?? null]
-      );
-    }
-
-    if (draft.linkedin_message?.trim()) {
-      await query(
-        `INSERT INTO linkedin_messages (sequence_id, lead_id, message, status)
-         VALUES ($1, $2, $3, 'drafted')`,
-        [seqId, id, draft.linkedin_message]
-      );
-    }
+    await persistDraftedSequence(Number(id), draft, query);
 
     const updated = await query<OutreachLead>(
-      `UPDATE leads SET status = 'drafted', updated_at = NOW() WHERE id = $1 RETURNING *`,
+      `SELECT * FROM leads WHERE id = $1`,
       [id]
     );
 

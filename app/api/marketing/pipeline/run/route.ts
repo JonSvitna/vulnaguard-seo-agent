@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { query, ensureSchema } from '@/lib/db'
 import { qualifyAndUpdateLead } from '@/lib/marketing/qualify'
+import { persistDraftedSequence } from '@/lib/marketing/draft-leads'
 import { draftSequence } from '@/vulnaguard-marketing-agents/agents/outreach'
 import type { OutreachLead } from '@/vulnaguard-marketing-agents/agents/outreach/types'
 
@@ -41,34 +42,7 @@ export async function POST() {
         try {
           const draft = await draftSequence(updated, updated.persona_slug as string | null, null, updated.skill_slugs as string[] | null)
 
-          // Delete any existing sequence, then insert new one
-          await query(`DELETE FROM sequences WHERE lead_id = $1`, [lead.id])
-          const seqs = await query<{ id: number }>(
-            `INSERT INTO sequences (lead_id, status) VALUES ($1, 'drafted') RETURNING id`,
-            [lead.id]
-          )
-          const seqId = seqs[0].id
-
-          for (const e of draft.emails) {
-            await query(
-              `INSERT INTO emails (sequence_id, lead_id, touch_number, subject, body, status, flagged_reason)
-               VALUES ($1, $2, $3, $4, $5, 'drafted', $6)`,
-              [seqId, lead.id, e.touch_number, e.subject, e.body, e.flagged_reason ?? null]
-            )
-          }
-
-          if (draft.linkedin_message?.trim()) {
-            await query(
-              `INSERT INTO linkedin_messages (sequence_id, lead_id, message, status)
-               VALUES ($1, $2, $3, 'drafted')`,
-              [seqId, lead.id, draft.linkedin_message]
-            )
-          }
-
-          await query(
-            `UPDATE leads SET status = 'drafted', updated_at = NOW() WHERE id = $1`,
-            [lead.id]
-          )
+          await persistDraftedSequence(lead.id, draft, query)
 
           drafted++
         } catch (draftErr) {

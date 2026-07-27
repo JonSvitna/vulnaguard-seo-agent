@@ -183,6 +183,7 @@ function statusColor(status: string) {
     discovered: "#4C8EC9", qualified: "#C9A84C", drafted: "#7C6AC4",
     approved: "#4CC98E", sent: "#4CC98E", replied: "#C9A84C",
     disqualified: "#666", rejected: "#666", unsubscribed: "#C94C4C", no_email: "#C9843C",
+    invalid_email: "#C94C4C",
   };
   return map[status] || "#666";
 }
@@ -194,7 +195,7 @@ function daysUntil(dateStr: string | null) {
 }
 
 const TIERS = ["fast", "balanced", "powerful"];
-const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed", "no_email"];
+const STATUS_OPTIONS = ["discovered", "qualified", "disqualified", "drafted", "approved", "sent", "replied", "rejected", "unsubscribed", "no_email", "invalid_email"];
 const CATEGORY_OPTIONS = ["sales", "partnership", "relationship_building", "referral", "clay_leads"];
 type ContactFilter = "all" | "has_email" | "no_email";
 
