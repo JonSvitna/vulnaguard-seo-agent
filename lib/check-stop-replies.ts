@@ -37,6 +37,17 @@ async function setCursor(iso: string): Promise<void> {
 // that lead the same way the manual opt-out endpoint does. This is the
 // automated backstop for CAN-SPAM's "Reply STOP to opt out" footer promise —
 // without it, opt-outs only happen if a human notices the reply in time.
+//
+// This polls the mailbox Sean actually works out of, not a dedicated
+// outreach-reply inbox — so once a lead has replied at all, every later
+// message in that same live thread would otherwise get re-scanned against
+// STOP_RE forever (nothing else ever advances a lead off 'sent'). Ordinary
+// back-and-forth eventually contains a word like "stop" and would falsely
+// auto-unsubscribe an active conversation, email the contact an unwanted
+// "removed from outreach" notice, and post to Slack. So: only leads still
+// in pure cold-outreach status ('sent') are evaluated at all, and the first
+// non-STOP reply flips a lead to 'replied' so this stops looking at that
+// thread — same one-shot treatment as an actual opt-out.
 export async function checkStopReplies(): Promise<CheckStopRepliesResult> {
   if (!process.env.MS365_CLIENT_ID || !process.env.MS365_TENANT_ID || !process.env.MS365_CLIENT_SECRET || !process.env.MS365_USER_UPN) {
     return { ok: false, checked: 0, unsubscribed: 0, errors: ['MS365 credentials are not set — STOP-reply auto-detection is disabled'] }
@@ -60,16 +71,27 @@ export async function checkStopReplies(): Promise<CheckStopRepliesResult> {
     const sender = msg.from?.emailAddress?.address?.toLowerCase().trim()
     if (!sender) continue
 
-    const bodyMatches = STOP_RE.test(msg.subject ?? '') || STOP_RE.test(msg.bodyPreview ?? '')
-    if (!bodyMatches) continue
-
     try {
       const leads = await query<{ id: number; company_name: string; status: string }>(
         `SELECT id, company_name, status FROM leads WHERE lower(contact_email) = $1`,
         [sender]
       )
       const lead = leads[0]
-      if (!lead || lead.status === 'unsubscribed') continue
+      // Only still-cold leads are in scope. Once a lead has replied once
+      // (status flipped to 'replied' below) or is already 'unsubscribed',
+      // it's out of the automated pipeline for good — a human is handling
+      // it, or it's already suppressed — so skip silently, no Slack post.
+      if (!lead || lead.status !== 'sent') continue
+
+      const bodyMatches = STOP_RE.test(msg.subject ?? '') || STOP_RE.test(msg.bodyPreview ?? '')
+
+      if (!bodyMatches) {
+        // A genuine reply, not a decline — take it out of automated
+        // opt-out scanning so the live conversation isn't rescanned on
+        // every future message.
+        await query(`UPDATE leads SET status = 'replied', updated_at = NOW() WHERE id = $1`, [lead.id])
+        continue
+      }
 
       await query(`UPDATE leads SET status = 'unsubscribed', updated_at = NOW() WHERE id = $1`, [lead.id])
 
